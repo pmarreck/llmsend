@@ -1,0 +1,22 @@
+{
+  "name": "llmsend",
+  "version": "0.1.0",
+  "description": "Send messages between Claude Code sessions running related projects. Drops a markdown note in the recipient's inbox/ directory and live-pings their tmux session via send-keys + kitty CSI u submit escape so the recipient picks it up immediately. Two-channel design: the file is the durable record; the tmux ping is the live notification.",
+  "author": {
+    "name": "Peter Marreck"
+  },
+  "repository": "https://github.com/pmarreck/llmsend",
+  "license": "MIT",
+  "keywords": [
+    "claude-code",
+    "tmux",
+    "kitty",
+    "inter-agent",
+    "messaging",
+    "inbox",
+    "skill",
+    "coordination",
+    "multi-project"
+  ],
+  "homepage": "https://github.com/pmarreck/llmsend#readme"
+}
