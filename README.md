@@ -36,25 +36,33 @@ recipient steps, prerequisites, failure modes.
 
 ## Install
 
-### Via Claude Code's plugin system
+### Via Claude Code's plugin system (recommended)
+
+This repo doubles as a single-plugin marketplace. Add it once, then
+install:
 
 ```
-/plugin install llmsend
+/plugin marketplace add pmarreck/llmsend
+/plugin install llmsend@llmsend
 ```
 
-(Once published to a marketplace.)
+Update later with:
 
-### Manual install
+```
+/plugin marketplace update llmsend
+/plugin install llmsend@llmsend   # re-runs install on the updated version
+```
+
+### Manual install (no marketplace)
 
 ```sh
-git clone https://github.com/pmarreck/llmsend ~/.claude/plugins/llmsend
+git clone https://github.com/pmarreck/llmsend ~/Documents-CloudManaged/llmsend
+ln -sfn ~/Documents-CloudManaged/llmsend/skills/LLMsend ~/.claude/skills/LLMsend
 ```
 
-Or symlink the skill directly:
-
-```sh
-ln -s "$PWD/skills/LLMsend" ~/.claude/skills/LLMsend
-```
+The symlink is so Claude Code's user-level skill loader picks it up at
+`~/.claude/skills/LLMsend/SKILL.md`. Restart your Claude Code session
+to load the skill into the available-skills list.
 
 ## Prerequisites
 

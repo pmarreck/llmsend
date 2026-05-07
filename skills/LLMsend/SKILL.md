@@ -1,6 +1,13 @@
 ---
 name: LLMsend
-description: Send a message between Claude Code sessions running related projects. Drops a markdown note in the recipient's inbox/ directory and live-pings their tmux session so they pick it up immediately. Use when sibling projects (each running its own Claude Code instance in its own tmux session) need to coordinate — passing handoff notes, design questions, status updates, fix requests. Two-channel design: the file is the durable record; the tmux ping is the live "check your mail" notification.
+description: >-
+  Send a message between Claude Code sessions running related projects.
+  Drops a markdown note in the recipient's inbox/ directory and live-pings
+  their tmux session so they pick it up immediately. Use when sibling
+  projects (each running its own Claude Code instance in its own tmux
+  session) need to coordinate — passing handoff notes, design questions,
+  status updates, fix requests. Two-channel design — the file is the
+  durable record; the tmux ping is the live "check your mail" notification.
 ---
 
 # LLMsend
