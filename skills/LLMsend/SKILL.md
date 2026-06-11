@@ -156,6 +156,13 @@ to Claude Code. Plain `tmux send-keys ... Enter` only inserts a
 newline into the recipient's input buffer; the CSI u escape fires
 the actual submit handler.
 
+**Before you send, glance at the recipient's input line _with ANSI
+codes_** so you don't clobber a real mid-typed draft. A dim/grey line
+after `❯` is just Claude Code's suggested reply (safe to type over);
+normal-intensity text is a real draft (hold, or use the inbox note
+alone). See "Disambiguate the input line" under the Race / collision
+caveat below for the one-liner.
+
 ```bash
 ping_text="📬 New inbox message from <sender-project>: <full-path-to-note>"
 [ "$response_expected" = "no" ] && ping_text="$ping_text (FYI only)"
@@ -287,15 +294,34 @@ do delete the original note per Step 3.
 
 ## Race / collision caveat
 
-If the user (or the recipient Claude Code instance) is mid-typing in
-the target session when send-keys fires, the ping text gets
-concatenated into their draft. There is no way to detect "user is
-typing" from outside tmux. Mitigation: the inbox file is authoritative;
-the recipient will catch swallowed pings on their next inbox scan
-(Step 4).
+If the recipient is mid-typing a **real draft** when send-keys fires,
+the ping concatenates into it. But a real draft and a false alarm look
+**identical without colour** — so read the pane **with ANSI codes** to
+tell them apart before sending:
 
-This is acceptable in practice. The latency win from the live ping
-outweighs the occasional user-keyboard collision.
+- **Dim/grey text** (SGR 2, `\e[2m`) after the `❯` is Claude Code's
+  **suggested next reply** (ghost autocomplete), NOT a real draft.
+  Typing over it just replaces it — **safe to send.**
+- **Normal-intensity text** after the `❯` is a **real mid-typed draft**.
+  Sending would clobber it — **hold**, or fall back to the inbox note
+  alone (it is authoritative; the recipient catches it on the next
+  inbox scan, Step 4).
+
+### Disambiguate the input line — do this before every send-keys
+```bash
+tmux capture-pane -pet "$recipient" -S -3 | gcat -v | grep -nE '❯'
+#   ^[[2m wrapping text after ❯  => dim suggestion => safe to type over
+#   normal text after ❯ (no ^[[2m) => real draft   => HOLD / inbox-only
+#   nothing after ❯ (empty line)   => idle          => safe to send
+```
+`capture-pane -e` includes the escape sequences and `gcat -v` renders
+ESC as `^[`, so the `^[[2m` dim marker becomes visible. **Without `-e`
+the suggestion and a real draft are indistinguishable — that is the
+trap** (a dim suggestion looks like a draft, so you "hold" forever, or
+you assume it's a suggestion and clobber a real one). `cat -v` is GNU
+coreutils; on macOS use `gcat`. A one-glance check turns "occasional
+clobber" into "never clobber" — and the live-ping latency win still
+stands.
 
 ## Common failure modes
 
