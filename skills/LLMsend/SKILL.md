@@ -26,11 +26,19 @@ rather than at their next manual inbox poll.
 - Each session is named after its project — by convention the project
   directory's basename, but the convention can be overridden if the
   project's owner has chosen a different session name.
-- Both Claude Code instances run under a terminal that supports kitty's
-  enhanced keyboard mode (kitty itself, WezTerm, recent Ghostty —
-  most modern terminals). Without this, the submit-escape doesn't
-  fire and the message lands as a draft requiring a manual Enter
-  press from the user at the recipient's keyboard.
+- The recipient **Claude Code instance** (under tmux) must accept the
+  CSI u Enter encoding (`\e[13u`). NOTE the corrected mental model
+  (verified 2026-06-11): `tmux send-keys` injects bytes directly into the
+  pane's pty — the outer terminal emulator NEVER sees them, so its
+  kitty-protocol support is irrelevant to delivery. Sessions created
+  detached, with no terminal ever attached, accept the submit escape fine.
+  (The emulator's kitty/CSI-u support only affects keys the human
+  physically types — e.g. WezTerm historically wants
+  `enable_kitty_keyboard = true` for that, but it has no bearing on
+  LLMsend.) Where delivery CAN fail is version-shaped: an old tmux
+  without extended-keys handling or an old Claude Code input parser —
+  symptom: the ping lands as a draft requiring a manual Enter at the
+  recipient's keyboard; fallback: the inbox file is durable regardless.
 </prerequisites>
 
 ## Sender workflow
@@ -168,9 +176,40 @@ tmux send-keys -t "$recipient" $'\e[13u'   # kitty CSI u for keycode 13 (Enter)
 
 </sender_steps>
 
+## Lightweight mode — ping-only (inbox note optional)
+
+The inbox note exists for **durability and elucidation**. When a message
+needs neither, skip Steps 3–4 and put the entire message in the tmux ping
+itself:
+
+```bash
+tmux send-keys -t "$recipient" "📬 <sender> (live ping, no inbox note): <the whole message>"
+tmux send-keys -t "$recipient" $'\e[13u'
+```
+
+**Decision rule — write a full inbox note when ANY of these hold; otherwise
+ping-only is fine:**
+
+- The content carries decisions, specs, briefs, or anything a future
+  session might need to re-read (durable record wanted).
+- Delivery MUST happen — ping-only has **no fallback**: if it lands in a
+  mid-typing draft or a dead session, it is simply lost (see the collision
+  caveat below, which bites harder here).
+- The message is longer than a sentence or two — long pings are hostile
+  to the recipient's input buffer and to any human watching the pane.
+
+Good ping-only uses: status nudges ("how's the build?"), acks, elapsed-time
+checks, "look at X when you surface" pointers. Mark them clearly with
+`(live ping, no inbox note)` so the recipient knows there is no file to
+read or delete.
+
 ## Recipient workflow
 
 <recipient_steps>
+
+**Live pings first:** a message marked `(live ping, no inbox note)` IS the
+entire message — there is no file to read or delete. Act on it directly
+and skip Steps 2–3 for that message.
 
 ### Step 1 — see the ping in your prompt area
 
@@ -267,6 +306,8 @@ outweighs the occasional user-keyboard collision.
 | Garbage characters appear at recipient | Recipient's terminal doesn't handle kitty CSI u | Recipient should switch to a kitty-mode-compatible terminal, OR sender should fall back to file-only delivery and tell the user to manually notify |
 | Recipient never reads the note | Inbox dir doesn't exist or sender wrote to wrong path | Verify path; recipient may need to add inbox-watching to their startup routine |
 | Two notes with the same filename | Both senders dropped on the same day with the same topic | Append `-NNN` suffix to disambiguate |
+| Ping sent right after Esc/interrupt silently vanishes | Recipient's input buffer is cleared during turn teardown (observed live, 2026-06-11) | After interrupting, wait until the recipient's pane shows an idle prompt (`capture-pane` → `❯`) before sending; or use a full inbox note, which survives regardless |
+| Ping shows "Press up to edit queued messages" but is never read | Queued messages don't preempt — the recipient may have self-started a new turn (e.g. resuming its todo list after an interrupt), and your ping waits behind it indefinitely (also observed live, 2026-06-11) | "Queued" ≠ "read". For urgent delivery, verify the recipient's spinner is processing YOUR message; if it's grinding its own work, a (second) Esc ends that turn and releases the queue |
 
 ## Sharing this skill
 
