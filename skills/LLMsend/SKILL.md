@@ -309,10 +309,13 @@ tell them apart before sending:
 
 ### Disambiguate the input line — do this before every send-keys
 ```bash
-tmux capture-pane -pet "$recipient" -S -3 | gcat -v | grep -nE '❯'
-#   ^[[2m wrapping text after ❯  => dim suggestion => safe to type over
-#   normal text after ❯ (no ^[[2m) => real draft   => HOLD / inbox-only
-#   nothing after ❯ (empty line)   => idle          => safe to send
+tmux capture-pane -pet "$recipient" -S -3 | gcat -v | tail -3   # READ the input line
+#   input line's text wrapped in ^[[2m … ^[[0m => dim suggestion => safe to type over
+#   input line's text at normal intensity       => real draft     => HOLD / inbox-only
+#   nothing after the prompt glyph               => idle           => safe to send
+# Quick boolean (dim run present near input?):  … | gcat -v | tail -3 | grep -c '\[2m'  (>0 ⇒ suggestion)
+# GOTCHA: grep the dim CODE '\[2m', NOT the ❯ glyph — `gcat -v` mangles the multibyte
+# ❯ into M-b… bytes, so a literal ❯ grep matches NOTHING (a false "empty/idle" reading).
 ```
 `capture-pane -e` includes the escape sequences and `gcat -v` renders
 ESC as `^[`, so the `^[[2m` dim marker becomes visible. **Without `-e`
