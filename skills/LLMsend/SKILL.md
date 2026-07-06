@@ -258,30 +258,41 @@ ssh -o BatchMode=yes "$host" tmux has-session -t "$session" 2>/dev/null \
   || { echo "ERROR: no session '$session' on '$host'"; exit 1; }
 ```
 
-**Step 3 — resolve the recipient dir + write the note** (produce the note
-LOCALLY, stream it over SSH — no fragile remote quoting):
+**Step 3 — resolve the recipient dir + write the note.** The critical
+quoting rule (learned by dogfooding this recipe and watching it FAIL,
+2026-07-06): **wrap the whole remote command in ONE double-quoted string**
+so the local shell doesn't strip inner quotes and SSH doesn't rejoin bare
+args for the remote shell to re-parse. Bare
+`ssh host tmux display-message -pt X '#{pane_current_path}'` lets the remote
+shell see `#{...}` UNQUOTED — and `#` starts a comment, so tmux runs with no
+format and returns garbage. Keep the format single-quoted INSIDE the outer
+double quotes:
 
 ```bash
 # where the recipient session is rooted, on its machine:
-rdir="$(ssh -o BatchMode=yes "$host" \
-  tmux display-message -pt "$session" '#{pane_current_path}')"
+rdir="$(ssh -o BatchMode=yes "$host" "tmux display-message -p -t '$session' '#{pane_current_path}'")"
+# produce the note LOCALLY, stream it over SSH (outer double quotes → one
+# remote command; inner single quotes protect the paths):
 ssh -o BatchMode=yes "$host" "mkdir -p '$rdir/inbox' && cat > '$rdir/inbox/$notefile'" < ./localnote.md
 ```
 
-**Step 5 — ping, with the CSI-u escape evaluated LOCALLY** (guardrail #4 —
-produce the `\e[13u` bytes sender-side so SSH just carries them; this
-sidesteps remote login-shell/quoting fragility):
+**Step 5 — ping: literal text + hex-bytes submit** (the bulletproof form —
+immune to ALL local/remote escape-quoting). Send the message with `-l`
+(literal, single-quoted for the remote shell) and the CSI-u submit as raw
+HEX BYTES with `-H`, so no escape ever passes through a shell:
 
 ```bash
-ssh -o BatchMode=yes "$host" tmux send-keys -t "$session" \
-  "📬 New inbox message from $self: $rdir/inbox/$notefile"
-ssh -o BatchMode=yes "$host" tmux send-keys -t "$session" "$(printf '\033[13u')"
+msg="📬 New inbox message from $self: $rdir/inbox/$notefile"   # keep free of single-quotes
+ssh -o BatchMode=yes "$host" "tmux send-keys -t '$session' -l '$msg'"
+ssh -o BatchMode=yes "$host" "tmux send-keys -t '$session' -H 1b 5b 31 33 75"  # ESC [ 1 3 u
 ```
 
-Note the `"$(printf '\033[13u')"` — the escape is expanded in YOUR shell
-(bash `printf` renders `\033` = ESC universally, where `\e` is less
-portable), and SSH transmits the resulting bytes; the remote `tmux
-send-keys` receives them literally. Do NOT `printf` on the remote side.
+`-H 1b 5b 31 33 75` sends the exact CSI-u Enter bytes (`\x1b[13u`) as hex —
+tmux writes them straight to the pty, so there is NO escape for either
+shell to mangle. This is strictly more robust than `"$(printf '\033[13u')"`
+as an arg (which survives simple cases but rides on fragile
+SSH-rejoin-then-reparse). Keep `$msg` free of single-quotes (paths and the
+📬/em-dash are fine).
 
 ### Guardrails (hard-won; violate at your peril)
 
@@ -300,8 +311,14 @@ send-keys` receives them literally. Do NOT `printf` on the remote side.
    (session gone, tmux version, mid-typing draft). Always guard the ping
    with `tmux has-session` (Step 2) and prefer a full note for anything
    that must not be lost.
-4. **Evaluate the CSI-u escape locally** (see Step 5) — never via remote
-   `printf`.
+4. **Never send an escape through a shell — use hex bytes** (see Step 5:
+   `tmux send-keys -H 1b 5b 31 33 75`). The submit escape (`\x1b[13u`)
+   passed as text rides on fragile SSH-rejoin-then-remote-reparse; `-H`
+   writes the exact bytes to the pty with no shell in the path. Likewise,
+   **wrap every remote command in one outer double-quoted string** so the
+   remote shell never re-splits your args or comment-eats a `#{...}` format
+   (Step 3). Both were found by dogfooding — the first draft of this recipe
+   failed live before this fix.
 5. **Tailnet-only, key-auth only** (see prerequisites).
 6. **"Home box" == the machine holding the canonical WORKING COPY.** Tie to
    the fleet invariant: uncommitted work lives on exactly ONE machine.
