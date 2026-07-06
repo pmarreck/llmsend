@@ -57,7 +57,7 @@ Update later with:
 
 ```sh
 git clone https://github.com/pmarreck/llmsend ~/Documents-CloudManaged/llmsend
-ln -sfn ~/Documents-CloudManaged/llmsend/skills/LLMsend ~/.claude/skills/LLMsend
+ln -sfn ~/Code/llmsend/skills/LLMsend ~/.claude/skills/LLMsend
 ```
 
 The symlink is so Claude Code's user-level skill loader picks it up at
@@ -72,8 +72,11 @@ to load the skill into the available-skills list.
   kitty's enhanced keyboard mode (kitty itself, WezTerm, recent
   Ghostty, etc.). Without this, the submit-escape lands as a draft
   requiring manual Enter.
-- Filesystem access between sender and recipient project trees
-  (same machine, or a shared mount).
+- Reach to the recipient: filesystem access between sender and
+  recipient project trees on the same machine, OR — for
+  `<session>@<host>` cross-machine addressing — the recipient host on
+  the same tailnet with `BatchMode=yes` SSH key auth. (Bare `<session>`
+  names stay local and unchanged; `@<host>` is opt-in.)
 
 ## License
 

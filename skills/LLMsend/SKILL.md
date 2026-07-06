@@ -1,13 +1,15 @@
 ---
 name: LLMsend
 description: >-
-  Send a message between Claude Code sessions running related projects.
-  Drops a markdown note in the recipient's inbox/ directory and live-pings
-  their tmux session so they pick it up immediately. Use when sibling
-  projects (each running its own Claude Code instance in its own tmux
-  session) need to coordinate — passing handoff notes, design questions,
-  status updates, fix requests. Two-channel design — the file is the
-  durable record; the tmux ping is the live "check your mail" notification.
+  Send a message between Claude Code sessions running related projects,
+  on the same machine OR across machines over tailscale. Drops a markdown
+  note in the recipient's inbox/ directory and live-pings their tmux
+  session so they pick it up immediately. Use when sibling projects (each
+  running its own Claude Code instance in its own tmux session) need to
+  coordinate — passing handoff notes, design questions, status updates,
+  fix requests. Addressing: bare `<session>` = local; `<session>@<host>` =
+  a session on another tailnet machine. Two-channel design — the file is
+  the durable record; the tmux ping is the live "check your mail" ping.
 ---
 
 # LLMsend
@@ -210,6 +212,104 @@ checks, "look at X when you surface" pointers. Mark them clearly with
 `(live ping, no inbox note)` so the recipient knows there is no file to
 read or delete.
 
+## Cross-machine addressing (tailscale) — `<session>@<host>`
+
+LLMsend works across machines on a **tailnet** using plain SSH — no daemon,
+no new transport. The two channels are unchanged; only the *reach* extends.
+
+### The address grammar
+
+- **`<session>`** (bare) — a session on THIS machine. **Grandfathered: zero
+  change, always local.** Nobody is forced onto `@host` — bare addressing is
+  the default and keeps working exactly as before. During a fleet migration,
+  address a project bare when its live session is on your box.
+- **`<session>@<host>`** — the session named `<session>` on tailnet machine
+  `<host>`, where `<host>` is the **tailscale MagicDNS name** (`tailscale
+  status`, or the machine's `hostname`). Opt-in, additive.
+
+The fleet convention still holds: `<session>` == the project directory
+basename == the "agent name". So `validate_gui@thelio-pm` is the
+validate_gui agent on the Thelio; `validate_gui@peters-macbook-pro-m4-max`
+is the one on the Mac — and during a migration BOTH can be live at once,
+which is exactly why the `@host` qualifier exists.
+
+### Prerequisites (cross-machine)
+
+- **Tailnet-only, key-auth only.** Cross-machine send-keys IS remote
+  keystroke injection into another agent's pty. Do it ONLY over the trusted
+  tailnet with `BatchMode=yes` SSH key auth. **Never** over an untrusted
+  network; **never** with password auth. This is guardrail #5 and it is not
+  optional.
+- Repos live at the same path on every box (fleet convention: `~/Code/<name>`),
+  so recipient-dir resolution stays mechanical.
+
+### Sender workflow — the same 5 steps, with SSH substitutions
+
+**Your own address** (for `From:` headers): `"$(tmux display-message -p
+'#S')@$(hostname)"`. Cross-machine notes MUST carry a `From: <session>@<host>`
+header (reply routing depends on it), and the filename gains the origin:
+`YYYY-MM-DD-from-<session>@<host>-<topic>.md`.
+
+**Step 2 — verify the recipient session exists** (guardrail #3: guard every
+remote ping; a missing session errors noisily):
+
+```bash
+ssh -o BatchMode=yes "$host" tmux has-session -t "$session" 2>/dev/null \
+  || { echo "ERROR: no session '$session' on '$host'"; exit 1; }
+```
+
+**Step 3 — resolve the recipient dir + write the note** (produce the note
+LOCALLY, stream it over SSH — no fragile remote quoting):
+
+```bash
+# where the recipient session is rooted, on its machine:
+rdir="$(ssh -o BatchMode=yes "$host" \
+  tmux display-message -pt "$session" '#{pane_current_path}')"
+ssh -o BatchMode=yes "$host" "mkdir -p '$rdir/inbox' && cat > '$rdir/inbox/$notefile'" < ./localnote.md
+```
+
+**Step 5 — ping, with the CSI-u escape evaluated LOCALLY** (guardrail #4 —
+produce the `\e[13u` bytes sender-side so SSH just carries them; this
+sidesteps remote login-shell/quoting fragility):
+
+```bash
+ssh -o BatchMode=yes "$host" tmux send-keys -t "$session" \
+  "📬 New inbox message from $self: $rdir/inbox/$notefile"
+ssh -o BatchMode=yes "$host" tmux send-keys -t "$session" "$(printf '\033[13u')"
+```
+
+Note the `"$(printf '\033[13u')"` — the escape is expanded in YOUR shell
+(bash `printf` renders `\033` = ESC universally, where `\e` is less
+portable), and SSH transmits the resulting bytes; the remote `tmux
+send-keys` receives them literally. Do NOT `printf` on the remote side.
+
+### Guardrails (hard-won; violate at your peril)
+
+1. **BATCH, NEVER BROADCAST.** Never fan a ping across many sessions at
+   once — a `send-keys` storm caused a watchman thundering-herd lockup AND
+   tripped Anthropic's automation flag (both observed live, 2026-07-06).
+   Cross-machine amplifies both. Send to at most ~4 recipients per batch
+   with pauses between; never all-sessions-at-once.
+2. **jj/watchman wedges under concurrency.** Simultaneous jj ops across
+   boxes — even `jj status`, which SNAPSHOTS (not read-only) — can lock
+   watchman. For any scripted/agent jj READ, use `jj --ignore-working-copy`.
+   Recovery: `jj --config fsmonitor.backend=none util snapshot`, then
+   `killall -9 watchman`.
+3. **File is truth; ping is best-effort — more so across machines.** The
+   inbox note is the durable channel; the remote ping fails more ways
+   (session gone, tmux version, mid-typing draft). Always guard the ping
+   with `tmux has-session` (Step 2) and prefer a full note for anything
+   that must not be lost.
+4. **Evaluate the CSI-u escape locally** (see Step 5) — never via remote
+   `printf`.
+5. **Tailnet-only, key-auth only** (see prerequisites).
+6. **"Home box" == the machine holding the canonical WORKING COPY.** Tie to
+   the fleet invariant: uncommitted work lives on exactly ONE machine.
+   Handoff etiquette when a project moves boxes: drop a **wind-down note**
+   in the departing session's own inbox pointing at the new home, then let
+   the new box become canonical. (This is the same mechanism as a fleet
+   migration; during one, `@host` keeps addressing unambiguous.)
+
 ## Recipient workflow
 
 <recipient_steps>
@@ -275,6 +375,12 @@ If the sender asked for a response, follow the sender workflow above
 to drop a note in their inbox and ping them back. Reference the
 original note's path in your reply's `Re:` header.
 
+**Cross-machine replies:** if the sender's `From:` header is
+`<session>@<host>` (not a bare name), the sender is on another machine —
+reply back over SSH to that same `<host>` using the cross-machine sender
+steps, not a local `tmux send-keys`. The `From:` header IS the return
+address; a cross-machine note without one is a dead letter.
+
 If no response is needed (sender said `FYI only`), don't reply — but
 do delete the original note per Step 3.
 
@@ -337,19 +443,24 @@ stands.
 | Two notes with the same filename | Both senders dropped on the same day with the same topic | Append `-NNN` suffix to disambiguate |
 | Ping sent right after Esc/interrupt silently vanishes | Recipient's input buffer is cleared during turn teardown (observed live, 2026-06-11) | After interrupting, wait until the recipient's pane shows an idle prompt (`capture-pane` → `❯`) before sending; or use a full inbox note, which survives regardless |
 | Ping shows "Press up to edit queued messages" but is never read | Queued messages don't preempt — the recipient may have self-started a new turn (e.g. resuming its todo list after an interrupt), and your ping waits behind it indefinitely (also observed live, 2026-06-11) | "Queued" ≠ "read". For urgent delivery, verify the recipient's spinner is processing YOUR message; if it's grinding its own work, a (second) Esc ends that turn and releases the queue |
+| Cross-machine ping/note fails with an SSH error | Recipient host unreachable, not on the tailnet, or key auth not set up | `ssh -o BatchMode=yes <host> true` to confirm reachability + key auth; `tailscale status` to confirm the host is on the tailnet. The inbox note can't be written either, so nothing was delivered — fix the link and retry |
+| Cross-machine note delivered but reply never arrives | Note lacked a `From: <session>@<host>` header, so the recipient can't route back across machines | Always include the `From:` origin header + origin-in-filename for cross-machine notes; it is the return address |
+| Ambiguous which machine a project's session is on | Same-named session live on two boxes during a fleet migration | Use the `<session>@<host>` qualifier; the "home box" (canonical working copy) is authoritative — see guardrail #6 |
+| `jj`/watchman hangs after a burst of cross-machine coordination | Concurrent jj snapshots across boxes locked watchman (guardrail #2) | `jj --config fsmonitor.backend=none util snapshot` then `killall -9 watchman`; use `jj --ignore-working-copy` for scripted reads |
 
 ## Sharing this skill
 
 This skill is project-agnostic — it depends only on tmux, the kitty
-CSI u submit escape, and a shared filesystem with sibling project
-directories. To use it, anyone needs:
+CSI u submit escape, and either a shared filesystem (same machine) or
+tailnet SSH (across machines). To use it, anyone needs:
 
 1. A multi-project setup where each project runs in its own
    project-named tmux session.
 2. Claude Code instances in those sessions running on a
    kitty-enhanced-keyboard-compatible terminal.
-3. Filesystem access between the sender and recipient projects (same
-   machine, or a shared filesystem mount).
+3. Reach to the recipient: same-machine filesystem access, OR — for
+   `<session>@<host>` addressing — the recipient host on the same
+   tailnet with `BatchMode=yes` SSH key auth (guardrail #5).
 
 Drop this `SKILL.md` into `~/.claude/skills/LLMsend/` and Claude Code
 will pick it up at next session start. Confirm with the user before
