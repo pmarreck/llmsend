@@ -1,21 +1,22 @@
 ---
-name: LLMsend
+name: llmsend
 description: >-
-  Send a message between Claude Code sessions running related projects,
-  on the same machine OR across machines over tailscale. Drops a markdown
-  note in the recipient's inbox/ directory and live-pings their tmux
-  session so they pick it up immediately. Use when sibling projects (each
-  running its own Claude Code instance in its own tmux session) need to
-  coordinate — passing handoff notes, design questions, status updates,
-  fix requests. Addressing: bare `<session>` = local; `<session>@<host>` =
-  a session on another tailnet machine. Two-channel design — the file is
-  the durable record; the tmux ping is the live "check your mail" ping.
+  Send a message between Claude Code or Codex sessions running related
+  projects, on the same machine OR across machines over tailscale. Drops a
+  markdown note in the recipient's inbox/ directory and live-pings their
+  tmux session so they pick it up immediately. Use when sibling projects
+  need to coordinate — passing handoff notes, design questions, status
+  updates, fix requests. Addressing: bare `<session>` = local;
+  `<session>@<host>` = a session on another tailnet machine. Two-channel
+  design — the file is the durable record; the tmux ping is the live
+  "check your mail" ping.
 ---
 
 # LLMsend
 
-Two-channel inter-LLM messaging between Claude Code sessions running
-in named tmux sessions, where each session corresponds to one project.
+Two-channel inter-LLM messaging between Claude Code or Codex sessions
+running in named tmux sessions, where each session corresponds to one
+project.
 
 The **inbox file** under `<recipient-project>/inbox/` is the durable
 record — it survives session restarts, is grep-able, and forms a
@@ -28,7 +29,7 @@ rather than at their next manual inbox poll.
 - Each session is named after its project — by convention the project
   directory's basename, but the convention can be overridden if the
   project's owner has chosen a different session name.
-- The recipient **Claude Code instance** (under tmux) must accept the
+- The recipient **agent instance** (under tmux) must accept the
   CSI u Enter encoding (`\e[13u`). NOTE the corrected mental model
   (verified 2026-06-11): `tmux send-keys` injects bytes directly into the
   pane's pty — the outer terminal emulator NEVER sees them, so its
@@ -38,7 +39,7 @@ rather than at their next manual inbox poll.
   physically types — e.g. WezTerm historically wants
   `enable_kitty_keyboard = true` for that, but it has no bearing on
   LLMsend.) Where delivery CAN fail is version-shaped: an old tmux
-  without extended-keys handling or an old Claude Code input parser —
+  without extended-keys handling or an old agent input parser —
   symptom: the ping lands as a draft requiring a manual Enter at the
   recipient's keyboard; fallback: the inbox file is durable regardless.
 </prerequisites>
@@ -65,7 +66,7 @@ elif [ "$session" != "$project" ]; then
 fi
 ```
 
-You only need to verify this once per Claude Code session. Cache the
+You only need to verify this once per agent session. Cache the
 result.
 
 ### Step 2 — verify the RECIPIENT session exists (once per recipient per session)
@@ -82,7 +83,7 @@ fi
 <important>
 If the recipient is a project you have NOT messaged before in this
 conversation, **confirm with the user** before sending. Reasons:
-1. The session might exist but not be running a Claude Code instance.
+1. The session might exist but not be running a Claude Code or Codex instance.
 2. The recipient's terminal might not handle the kitty CSI u submit
    escape, in which case the ping lands as a draft requiring manual
    Enter.
@@ -153,8 +154,8 @@ recipient will assume a reply is wanted.
 
 ### Step 5 — notify via tmux send-keys + kitty CSI u submit
 
-The two-call pattern is required for the message to actually submit
-to Claude Code. Plain `tmux send-keys ... Enter` only inserts a
+The two-call pattern is required for the message to actually submit.
+Plain `tmux send-keys ... Enter` only inserts a
 newline into the recipient's input buffer; the CSI u escape fires
 the actual submit handler.
 
@@ -378,7 +379,7 @@ is delete.
 After reading the named note, scan the rest of the inbox for anything
 that didn't get cleaned up — either previous notes whose pings landed
 during user typing (and got swallowed into a draft), or pings sent
-to a session that wasn't yet running a Claude Code instance.
+to a session that wasn't yet running a Claude Code or Codex instance.
 
 ```bash
 ls -la <your-inbox>/
@@ -473,14 +474,14 @@ tailnet SSH (across machines). To use it, anyone needs:
 
 1. A multi-project setup where each project runs in its own
    project-named tmux session.
-2. Claude Code instances in those sessions running on a
+2. Claude Code or Codex instances in those sessions running on a
    kitty-enhanced-keyboard-compatible terminal.
 3. Reach to the recipient: same-machine filesystem access, OR — for
    `<session>@<host>` addressing — the recipient host on the same
    tailnet with `BatchMode=yes` SSH key auth (guardrail #5).
 
-Drop this `SKILL.md` into `~/.claude/skills/LLMsend/` and Claude Code
-will pick it up at next session start. Confirm with the user before
-pinging recipients you haven't messaged before — the convention may
-not yet be established for that project, and the user should opt in
-explicitly the first time.
+Drop this `SKILL.md` into `~/.claude/skills/llmsend/` for Claude Code or
+`~/.codex/skills/llmsend/` for Codex. The next session start will pick it
+up. Confirm with the user before pinging recipients you haven't messaged
+before — the convention may not yet be established for that project, and
+the user should opt in explicitly the first time.

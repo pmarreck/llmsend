@@ -2,16 +2,16 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-A Claude Code skill for sending messages between Claude Code sessions
-running related projects. Each project runs its own Claude Code
-instance in its own tmux session; this skill lets them coordinate via
-a hybrid file-based inbox and live tmux notification.
+A Claude Code/Codex skill for sending messages between agent sessions
+running related projects. Each project runs its own agent instance in its
+own tmux session; this skill lets them coordinate via a hybrid file-based
+inbox and live tmux notification.
 
 ## Why
 
 When you run multiple related projects (e.g. a library and several
 consumers, or a stack of sibling projects with cross-cutting concerns)
-each in its own Claude Code session, they need to communicate without
+each in its own agent session, they need to communicate without
 relying on you-the-human to relay every message by hand. `llmsend`
 codifies a battle-tested pattern: a durable inbox file plus a live
 tmux ping.
@@ -21,7 +21,7 @@ tmux ping.
 - **Sender** drops a markdown note in `<recipient-project>/inbox/`,
   then sends two `tmux send-keys` calls to the recipient's session —
   the message text plus the kitty CSI u submit escape (`\e[13u`),
-  which fires Claude Code's submit handler.
+  which fires the agent's submit handler.
 - **Recipient** sees the ping arrive in their prompt area as if the
   user typed it, reads the note (which becomes part of their
   context), deletes it, and optionally replies using the same flow.
@@ -31,7 +31,7 @@ audit-trail-friendly). The ping is the live notification (recipient
 picks up the message at their next prompt rather than at their next
 manual inbox poll).
 
-See `skills/LLMsend/SKILL.md` for the full protocol — sender steps,
+See `skills/llmsend/SKILL.md` for the full protocol — sender steps,
 recipient steps, prerequisites, failure modes.
 
 ## Install
@@ -57,18 +57,20 @@ Update later with:
 
 ```sh
 git clone https://github.com/pmarreck/llmsend ~/Documents-CloudManaged/llmsend
-ln -sfn ~/Code/llmsend/skills/LLMsend ~/.claude/skills/LLMsend
+ln -sfn ~/Code/llmsend/skills/llmsend ~/.claude/skills/llmsend
+ln -sfn ~/Code/llmsend/skills/llmsend ~/.codex/skills/llmsend
 ```
 
-The symlink is so Claude Code's user-level skill loader picks it up at
-`~/.claude/skills/LLMsend/SKILL.md`. Restart your Claude Code session
-to load the skill into the available-skills list.
+The symlinks let Claude Code and Codex user-level skill loaders pick it up
+at `~/.claude/skills/llmsend/SKILL.md` and
+`~/.codex/skills/llmsend/SKILL.md`. Restart the agent session to load the
+skill into the available-skills list.
 
 ## Prerequisites
 
 - Each project runs in a tmux session named after the project (by
   convention: the project directory's basename).
-- Both Claude Code instances run under a terminal that handles
+- Both agent instances run under a terminal that handles
   kitty's enhanced keyboard mode (kitty itself, WezTerm, recent
   Ghostty, etc.). Without this, the submit-escape lands as a draft
   requiring manual Enter.
