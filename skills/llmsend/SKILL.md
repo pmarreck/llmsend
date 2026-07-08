@@ -481,7 +481,10 @@ tailnet SSH (across machines). To use it, anyone needs:
    tailnet with `BatchMode=yes` SSH key auth (guardrail #5).
 
 Drop this `SKILL.md` into `~/.claude/skills/llmsend/` for Claude Code or
-`~/.codex/skills/llmsend/` for Codex. The next session start will pick it
-up. Confirm with the user before pinging recipients you haven't messaged
-before — the convention may not yet be established for that project, and
-the user should opt in explicitly the first time.
+`~/.codex/skills/llmsend/` for Codex. Codex 0.142.x requires a real
+directory and real `SKILL.md` file under `~/.codex/skills`; symlinked skill
+directories and symlinked `SKILL.md` files are skipped during discovery. The
+next session start will pick it up. Confirm with the user before pinging
+recipients you haven't messaged before — the convention may not yet be
+established for that project, and the user should opt in explicitly the
+first time.

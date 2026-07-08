@@ -58,13 +58,14 @@ Update later with:
 ```sh
 git clone https://github.com/pmarreck/llmsend ~/Documents-CloudManaged/llmsend
 ln -sfn ~/Code/llmsend/skills/llmsend ~/.claude/skills/llmsend
-ln -sfn ~/Code/llmsend/skills/llmsend ~/.codex/skills/llmsend
+mkdir -p ~/.codex/skills/llmsend
+cp ~/Code/llmsend/skills/llmsend/SKILL.md ~/.codex/skills/llmsend/SKILL.md
 ```
 
-The symlinks let Claude Code and Codex user-level skill loaders pick it up
-at `~/.claude/skills/llmsend/SKILL.md` and
-`~/.codex/skills/llmsend/SKILL.md`. Restart the agent session to load the
-skill into the available-skills list.
+Claude Code can load the symlinked skill directory. Codex 0.142.x needs a
+real directory and real `SKILL.md` under `~/.codex/skills`; symlinked skill
+directories and symlinked `SKILL.md` files are skipped during discovery.
+Restart the agent session to load the skill into the available-skills list.
 
 ## Prerequisites
 
