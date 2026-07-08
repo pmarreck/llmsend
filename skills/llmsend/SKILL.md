@@ -482,9 +482,10 @@ tailnet SSH (across machines). To use it, anyone needs:
 
 Drop this `SKILL.md` into `~/.claude/skills/llmsend/` for Claude Code or
 `~/.codex/skills/llmsend/` for Codex. Codex 0.142.x requires a real
-directory and real `SKILL.md` file under `~/.codex/skills`; symlinked skill
-directories and symlinked `SKILL.md` files are skipped during discovery. The
-next session start will pick it up. Confirm with the user before pinging
-recipients you haven't messaged before — the convention may not yet be
-established for that project, and the user should opt in explicitly the
-first time.
+directory and regular-file `SKILL.md` under `~/.codex/skills`; symlinked
+skill directories and symlinked `SKILL.md` files are skipped during discovery.
+When the skill repo and `~/.codex` are on the same filesystem, hard-link the
+Codex `SKILL.md` to the canonical file; otherwise copy it. The next session
+start will pick it up. Confirm with the user before pinging recipients you
+haven't messaged before — the convention may not yet be established for that
+project, and the user should opt in explicitly the first time.
