@@ -66,8 +66,9 @@ Claude Code can load the symlinked skill directory. Codex 0.142.x needs a
 real directory and regular-file `SKILL.md` under `~/.codex/skills`; symlinked
 skill directories and symlinked `SKILL.md` files are skipped during discovery.
 Use a hard link when the skill repo and `~/.codex` live on the same filesystem;
-fall back to `cp` when hard linking is not possible. Restart the agent session
-to load the skill into the available-skills list.
+fall back to `cp` when hard linking is not possible. If a future update
+replaces the canonical `SKILL.md` inode, rerun the `ln -f` command. Restart the
+agent session to load the skill into the available-skills list.
 
 ## Prerequisites
 

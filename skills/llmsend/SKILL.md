@@ -485,7 +485,8 @@ Drop this `SKILL.md` into `~/.claude/skills/llmsend/` for Claude Code or
 directory and regular-file `SKILL.md` under `~/.codex/skills`; symlinked
 skill directories and symlinked `SKILL.md` files are skipped during discovery.
 When the skill repo and `~/.codex` are on the same filesystem, hard-link the
-Codex `SKILL.md` to the canonical file; otherwise copy it. The next session
-start will pick it up. Confirm with the user before pinging recipients you
-haven't messaged before — the convention may not yet be established for that
-project, and the user should opt in explicitly the first time.
+Codex `SKILL.md` to the canonical file; otherwise copy it. If a future update
+replaces the canonical `SKILL.md` inode, rerun the hard-link command. The next
+session start will pick it up. Confirm with the user before pinging recipients
+you haven't messaged before — the convention may not yet be established for
+that project, and the user should opt in explicitly the first time.
