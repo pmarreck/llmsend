@@ -1,0 +1,6 @@
+# Dirtree: Stateful directory trees in the CLI for humans and LLMs. https://github.com/pmarreck/dirtree
+ver=1.2
+annotate=[
+	PLAN.md = Current llmsend protocol work and curiosity checks
+	skills/llmsend/SKILL.md = Durable inbox plus backend-specific local and tailnet tmux notification protocol for Claude and Codex
+]

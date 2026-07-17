@@ -29,16 +29,13 @@ rather than at their next manual inbox poll.
 - Each session is named after its project — by convention the project
   directory's basename, but the convention can be overridden if the
   project's owner has chosen a different session name.
-- The recipient **agent instance** (under tmux) must accept a remote carriage
-  return. The most reliable observed submit keystroke is `tmux send-keys C-m`
-  (verified on Thelio Codex panes, 2026-07-08). Older versions of this skill
-  preferred kitty CSI-u Enter bytes (`\e[13u` / `-H 1b 5b 31 33 75`), but that
-  can leave the ping sitting as an unsubmitted draft. NOTE the corrected mental
-  model: `tmux send-keys` injects bytes directly into the pane's pty — the
-  outer terminal emulator NEVER sees them. Where delivery CAN fail is
-  version-shaped: an old tmux or an old agent input parser may still leave the
-  ping as a draft requiring manual Enter; fallback: the inbox file is durable
-  regardless.
+- Submission is **backend-specific**. Kitty CSI-u Enter bytes (`\e[13u` /
+  `-H 1b 5b 31 33 75`) work for Claude panes inside tmux. Codex's paste-burst
+  guard can reinterpret rapidly injected text plus Enter as pasted text with a
+  newline; CSI-u and `C-m` therefore left live pings unsubmitted. Explicit
+  bracketed paste (`tmux paste-buffer -p`) followed by a separate plain Enter
+  reliably invoked Codex's submit action without a timing sleep (verified on
+  Thelio, 2026-07-17). The inbox file remains the durable delivery channel.
 </prerequisites>
 
 ## Sender workflow
@@ -81,8 +78,8 @@ fi
 If the recipient is a project you have NOT messaged before in this
 conversation, **confirm with the user** before sending. Reasons:
 1. The session might exist but not be running a Claude Code or Codex instance.
-2. The recipient may not submit on injected `C-m`, in which case the ping lands
-   as a draft requiring manual Enter.
+2. The recipient backend must be identified so its matching submit protocol is
+   used; an unknown backend gets file-only delivery rather than guessed keys.
 3. There may be a privacy / process reason the user wants you NOT to
    ping that recipient automatically.
 
@@ -148,12 +145,12 @@ If no response is expected, **say so explicitly** at the top of the
 note (e.g. `**FYI only — no response needed.**`). Without that the
 recipient will assume a reply is wanted.
 
-### Step 5 — notify via tmux send-keys + `C-m` submit
+### Step 5 — notify with the recipient backend's submit protocol
 
-The two-call pattern is required for the message to actually submit.
-Plain `tmux send-keys ... Enter` only inserts a
-newline into the recipient's input buffer; `C-m` sends the carriage return
-that has proved to be the reliable remote submit.
+The two-channel design means the note file is authoritative. Detect the pane's
+foreground agent, then use its tested input protocol. Codex needs explicit
+bracketed-paste boundaries so its paste-burst protection cannot absorb the
+following Enter as a newline.
 
 **Before you send, glance at the recipient's input line _with ANSI
 codes_** so you don't clobber a real mid-typed draft. A dim/grey line
@@ -166,25 +163,34 @@ caveat below for the one-liner.
 ping_text="📬 New inbox message from <sender-project>: <full-path-to-note>"
 [ "$response_expected" = "no" ] && ping_text="$ping_text (FYI only)"
 
-tmux send-keys -t "$recipient" "$ping_text"
-tmux send-keys -t "$recipient" C-m
+recipient_agent="$(tmux display-message -p -t "$recipient" '#{pane_current_command}')"
+case "$recipient_agent" in
+	claude|node)
+		tmux send-keys -t "$recipient" -l "$ping_text"
+		tmux send-keys -t "$recipient" -H 1b 5b 31 33 75
+		;;
+	codex)
+		ping_buffer="llmsend-ping-$$"
+		tmux set-buffer -b "$ping_buffer" "$ping_text"
+		tmux paste-buffer -d -p -r -b "$ping_buffer" -t "$recipient"
+		tmux send-keys -t "$recipient" Enter
+		;;
+	*)
+		echo "NOTE: inbox file delivered; unknown pane command '$recipient_agent', so no keys were injected" >&2
+		;;
+esac
 ```
 
-**Historical fallback:** if `C-m` ever fails but CSI-u works in a specific
-recipient, the old submit form was:
-
-```bash
-tmux send-keys -t "$recipient" $'\e[13u'   # kitty CSI u for keycode 13 (Enter)
-```
-
-On the Thelio Codex panes, `tmux send-keys -H 1b 5b 31 33 75` did not submit
-the queued ping, while `C-m` did. After sending the submit keystroke, recapture
-the pane and confirm the typed ping is gone.
+After sending, recapture the pane and confirm the recipient started processing
+or queued the ping. This guards against version-shaped input changes. Seeing a
+ping plus a blank line is not enough; that failure mode was observed live.
 
 **Critical syntax notes:**
 
-- The two `send-keys` calls are SEPARATE invocations. Don't combine
-  them into a single call with a trailing argument.
+- The content injection and submit key are separate operations. Do not append
+  Enter to the content operation.
+- `paste-buffer -p` is intentional for Codex: it emits bracketed-paste start and
+  end markers. Do not replace it with rapid `send-keys -l` plus a sleep.
 - Use the 📬 emoji as a visual signal to the recipient that this is
   an inter-LLM ping vs. user input. Optional but recommended.
 
@@ -197,8 +203,9 @@ needs neither, skip Steps 3–4 and put the entire message in the tmux ping
 itself:
 
 ```bash
-tmux send-keys -t "$recipient" "📬 <sender> (live ping, no inbox note): <the whole message>"
-tmux send-keys -t "$recipient" C-m
+ping_text="📬 <sender> (live ping, no inbox note): <the whole message>"
+# Inject and submit ping_text using the complete backend-specific case statement
+# from Step 5; Codex needs the content itself delivered by paste-buffer -p.
 ```
 
 **Decision rule — write a full inbox note when ANY of these hold; otherwise
@@ -281,19 +288,34 @@ rdir="$(ssh -o BatchMode=yes "$host" "tmux display-message -p -t '$session' '#{p
 ssh -o BatchMode=yes "$host" "mkdir -p '$rdir/inbox' && cat > '$rdir/inbox/$notefile'" < ./localnote.md
 ```
 
-**Step 5 — ping: literal text + `C-m` submit.** Send the message with `-l`
-(literal, single-quoted for the remote shell), then send `C-m` as the remote
-submit keystroke:
+**Step 5 — ping with the remote backend's protocol.** Detect the pane command,
+then use Kitty CSI-u for Claude or bracketed paste plus plain Enter for Codex:
 
 ```bash
 msg="📬 New inbox message from $self: $rdir/inbox/$notefile"   # keep free of single-quotes
-ssh -o BatchMode=yes "$host" "tmux send-keys -t '$session' -l '$msg'"
-ssh -o BatchMode=yes "$host" "tmux send-keys -t '$session' C-m"
+recipient_agent="$(ssh -o BatchMode=yes "$host" \
+  "tmux display-message -p -t '$session' '#{pane_current_command}'")"
+case "$recipient_agent" in
+	claude|node)
+		ssh -o BatchMode=yes "$host" "tmux send-keys -t '$session' -l '$msg'"
+		ssh -o BatchMode=yes "$host" "tmux send-keys -t '$session' -H 1b 5b 31 33 75"
+		;;
+	codex)
+		ping_buffer="llmsend-ping-$$"
+		printf '%s' "$msg" | ssh -o BatchMode=yes "$host" \
+		  "tmux load-buffer -b '$ping_buffer' - &&
+		   tmux paste-buffer -d -p -r -b '$ping_buffer' -t '$session' &&
+		   tmux send-keys -t '$session' Enter"
+		;;
+	*)
+		echo "NOTE: inbox file delivered; unknown remote pane command '$recipient_agent', so no keys were injected" >&2
+		;;
+esac
 ```
 
-`C-m` is the observed-good remote Enter for Codex panes. Keep `$msg` free of
-single-quotes (paths and the 📬/em-dash are fine), because the literal text
-still passes through the remote shell.
+The Codex path streams message bytes through standard input, avoiding a second
+round of remote-shell quoting. Keep the Claude-path `$msg` free of single quotes.
+Do not claim live delivery unless the remote pane processes or queues the ping.
 
 ### Guardrails (hard-won; violate at your peril)
 
@@ -312,12 +334,12 @@ still passes through the remote shell.
    (session gone, tmux version, mid-typing draft). Always guard the ping
    with `tmux has-session` (Step 2) and prefer a full note for anything
    that must not be lost.
-4. **Use `C-m` for remote submit.** It is simpler and has worked where the old
-   CSI-u hex-byte submit (`tmux send-keys -H 1b 5b 31 33 75`) did not. Still
-   **wrap every remote command in one outer double-quoted string** so the
-   remote shell never re-splits your args or comment-eats a `#{...}` format
-   (Step 3). This was found by dogfooding — the first draft of this recipe
-   failed live before this fix.
+4. **Match the backend; do not guess keys.** Claude uses CSI-u Enter. Codex uses
+   bracketed paste followed by plain Enter. An unknown pane command gets
+   file-only delivery. The authoritative sign of live delivery is the recipient
+   processing or queueing the ping. Still **wrap every remote command in one
+   outer double-quoted string** so the remote shell never re-splits arguments or
+   comment-eats a `#{...}` format.
 5. **Tailnet-only, key-auth only** (see prerequisites).
 6. **"Home box" == the machine holding the canonical WORKING COPY.** Tie to
    the fleet invariant: uncommitted work lives on exactly ONE machine.
@@ -336,9 +358,9 @@ and skip Steps 2–3 for that message.
 
 ### Step 1 — see the ping in your prompt area
 
-A line like `📬 New inbox message from <project>: <path>` arriving in
-your input area indicates a new note. The remote `C-m` submitted it
-for you, so you'll see it as if the user typed it.
+A line like `📬 New inbox message from <project>: <path>` arriving in your
+transcript indicates a new note. The sender uses a backend-specific submit
+protocol and verifies processing; the inbox remains authoritative if that fails.
 
 If multiple pings arrive while you're mid-task, the inbox is the
 ground truth — handle them in order after the current task settles.
@@ -452,9 +474,9 @@ stands.
 
 | Symptom | Likely cause | Fix |
 |---|---|---|
-| Ping lands but doesn't submit, sits as a draft | Submit keystroke failed or plain `Enter` was used | Use `tmux send-keys C-m`; see Step 5 |
+| Ping lands but doesn't submit, sits as a draft or prompt line | Wrong backend detected or agent input protocol changed | File delivery still succeeded; use manual Enter, then update the backend-specific protocol with a reproducing test |
 | `tmux send-keys` returns non-zero | Recipient session doesn't exist | Verify with `tmux list-sessions` |
-| Garbage characters appear at recipient | An escape-byte submit path was used instead of `C-m` | Use `tmux send-keys C-m`, or fall back to file-only delivery and tell the user to manually notify |
+| Garbage characters appear at recipient | An escape-byte submit path was interpreted as text | Fall back to file-only delivery and tell the user manual Enter is required |
 | Recipient never reads the note | Inbox dir doesn't exist or sender wrote to wrong path | Verify path; recipient may need to add inbox-watching to their startup routine |
 | Two notes with the same filename | Both senders dropped on the same day with the same topic | Append `-NNN` suffix to disambiguate |
 | Ping sent right after Esc/interrupt silently vanishes | Recipient's input buffer is cleared during turn teardown (observed live, 2026-06-11) | After interrupting, wait until the recipient's pane shows an idle prompt (`capture-pane` → `❯`) before sending; or use a full inbox note, which survives regardless |
@@ -466,14 +488,14 @@ stands.
 
 ## Sharing this skill
 
-This skill is project-agnostic — it depends only on tmux, `C-m` submit,
-and either a shared filesystem (same machine) or
+This skill is project-agnostic — it depends on tmux, durable inbox files,
+best-effort submit attempts, and either a shared filesystem (same machine) or
 tailnet SSH (across machines). To use it, anyone needs:
 
 1. A multi-project setup where each project runs in its own
    project-named tmux session.
-2. Claude Code or Codex instances in those sessions that accept `C-m` as a
-   submitted Enter when injected by tmux.
+2. Claude Code or Codex instances in those sessions; use CSI-u Enter for Claude
+   and bracketed paste plus plain Enter for Codex.
 3. Reach to the recipient: same-machine filesystem access, OR — for
    `<session>@<host>` addressing — the recipient host on the same
    tailnet with `BatchMode=yes` SSH key auth (guardrail #5).

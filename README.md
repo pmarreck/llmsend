@@ -18,10 +18,11 @@ tmux ping.
 
 ## How it works
 
-- **Sender** drops a markdown note in `<recipient-project>/inbox/`,
-  then sends two `tmux send-keys` calls to the recipient's session —
-  the message text plus the kitty CSI u submit escape (`\e[13u`),
-  which fires the agent's submit handler.
+- **Sender** drops a markdown note in `<recipient-project>/inbox/`, detects the
+  recipient backend, then uses its tested tmux input protocol: message plus
+  Kitty CSI-u Enter for Claude; explicit bracketed paste plus plain Enter for
+  Codex. The latter avoids Codex's paste-burst guard swallowing submission as a
+  newline, without timing sleeps.
 - **Recipient** sees the ping arrive in their prompt area as if the
   user typed it, reads the note (which becomes part of their
   context), deletes it, and optionally replies using the same flow.
@@ -74,10 +75,9 @@ agent session to load the skill into the available-skills list.
 
 - Each project runs in a tmux session named after the project (by
   convention: the project directory's basename).
-- Both agent instances run under a terminal that handles
-  kitty's enhanced keyboard mode (kitty itself, WezTerm, recent
-  Ghostty, etc.). Without this, the submit-escape lands as a draft
-  requiring manual Enter.
+- Claude recipients accept Kitty CSI-u Enter. Codex recipients accept tmux's
+  explicit bracketed paste followed by plain Enter. Unknown backends safely get
+  file-only delivery rather than speculative key injection.
 - Reach to the recipient: filesystem access between sender and
   recipient project trees on the same machine, OR — for
   `<session>@<host>` cross-machine addressing — the recipient host on
