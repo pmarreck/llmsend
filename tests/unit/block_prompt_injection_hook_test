@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+set -u
+
+root="$(cd "$(dirname "$0")/../.." && pwd)"
+source "$root/tests/testlib"
+
+guard="$root/skills/llmsend/scripts/block-prompt-injection-hook"
+if [ ! -x "$guard" ]; then
+	fail "missing executable block-prompt-injection-hook"
+	finish_tests block-prompt-injection-hook
+fi
+
+run_guard() {
+	local command="$1"
+	printf '%s' "$(jq -cn --arg command "$command" '{hook_event_name:"PreToolUse",tool_input:{command:$command}}')" | "$guard" >/dev/null 2>&1
+}
+
+blocked=(
+	"tmux send-keys -t validate -l '📬 New inbox message from dirtree'"
+	"msg='New inbox message'; tmux paste-buffer -t validate"
+	"ssh host \"tmux load-buffer -b llmsend-ping-1 -\""
+	"tmux send-keys -t validate Enter # llmsend"
+	"tmux send-keys -t validate -l '/home/p/Code/validate/inbox/2026-07-22-note.md'"
+)
+
+allowed=(
+	"tmux send-keys -t validate y Enter"
+	"tmux display-message -t validate '📬 Inbox note delivered'"
+	"printf 'New inbox message'"
+	"tmux capture-pane -pt validate"
+	"echo llmsend"
+)
+
+for command in "${blocked[@]}"; do
+	run_guard "$command"
+	assert_eq 2 "$?" "LLMsend-shaped terminal injection is blocked [$command]"
+done
+
+for command in "${allowed[@]}"; do
+	run_guard "$command"
+	assert_eq 0 "$?" "non-injecting or non-LLMsend tmux command remains allowed [$command]"
+done
+
+printf '{}' | "$guard" >/dev/null 2>&1
+assert_eq 0 "$?" "missing command fails open without terminal mutation"
+
+finish_tests block-prompt-injection-hook

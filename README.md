@@ -2,87 +2,68 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-A Claude Code/Codex skill for sending messages between agent sessions
-running related projects. Each project runs its own agent instance in its
-own tmux session; this skill lets them coordinate via a hybrid file-based
-inbox and live tmux notification.
+A Claude Code/Codex skill for safe messaging between project-named agent
+sessions on one machine or across Tailscale.
 
-## Why
+## Architecture
 
-When you run multiple related projects (e.g. a library and several
-consumers, or a stack of sibling projects with cross-cutting concerns)
-each in its own agent session, they need to communicate without
-relying on you-the-human to relay every message by hand. `llmsend`
-codifies a battle-tested pattern: a durable inbox file plus a live
-tmux ping.
+Every message is a Markdown file under the recipient project's `inbox/`.
+Agent-owned `UserPromptSubmit` and `PostToolUse` hooks surface changed pending
+paths through `additionalContext`; an optional tmux status-line message alerts
+the watching human.
 
-## How it works
+LLMsend never writes into another pane's terminal input. That structural rule
+eliminates draft corruption and makes delivery independent of terminal width,
+reflow, ANSI styling, and dim suggested prompts. If hooks are unavailable, the
+durable file remains authoritative and delivery degrades safely.
 
-- **Sender** drops a markdown note in `<recipient-project>/inbox/`, detects the
-  recipient backend, then uses its tested tmux input protocol: message plus
-  Kitty CSI-u Enter for Claude; explicit bracketed paste plus plain Enter for
-  Codex. The latter avoids Codex's paste-burst guard swallowing submission as a
-  newline, without timing sleeps.
-- **Recipient** sees the ping arrive in their prompt area as if the
-  user typed it, reads the note (which becomes part of their
-  context), deletes it, and optionally replies using the same flow.
+The implementation lives in `skills/llmsend/`:
 
-The file is the durable record (survives session crashes, grep-able,
-audit-trail-friendly). The ping is the live notification (recipient
-picks up the message at their next prompt rather than at their next
-manual inbox poll).
-
-See `skills/llmsend/SKILL.md` for the full protocol — sender steps,
-recipient steps, prerequisites, failure modes.
+- `SKILL.md` defines local and cross-machine workflows.
+- `scripts/inbox-awareness-hook` supplies editor-independent agent context.
+- `scripts/notify-session` emits only a human-visible tmux status message.
+- `./test` enforces the no-prompt-injection boundary and hook behavior.
 
 ## Install
 
-### Via Claude Code's plugin system (recommended)
+### Claude Code plugin
 
-This repo doubles as a single-plugin marketplace. Add it once, then
-install:
-
-```
+```text
 /plugin marketplace add pmarreck/llmsend
 /plugin install llmsend@llmsend
 ```
 
-Update later with:
+### Manual
 
-```
-/plugin marketplace update llmsend
-/plugin install llmsend@llmsend   # re-runs install on the updated version
-```
+Claude Code can load the repository skill directory through a symlink:
 
-### Manual install (no marketplace)
-
-```sh
-git clone https://github.com/pmarreck/llmsend ~/Documents-CloudManaged/llmsend
-ln -sfn ~/Code/llmsend/skills/llmsend ~/.claude/skills/llmsend
-mkdir -p ~/.codex/skills/llmsend
-ln -f ~/Code/llmsend/skills/llmsend/SKILL.md ~/.codex/skills/llmsend/SKILL.md
+```bash
+ln -sfn "$HOME/Code/llmsend/skills/llmsend" "$HOME/.claude/skills/llmsend"
 ```
 
-Claude Code can load the symlinked skill directory. Codex 0.142.x needs a
-real directory and regular-file `SKILL.md` under `~/.codex/skills`; symlinked
-skill directories and symlinked `SKILL.md` files are skipped during discovery.
-Use a hard link when the skill repo and `~/.codex` live on the same filesystem;
-fall back to `cp` when hard linking is not possible. If a future update
-replaces the canonical `SKILL.md` inode, rerun the `ln -f` command. Restart the
-agent session to load the skill into the available-skills list.
+Codex currently requires regular files. Materialize the whole skill, including
+its scripts, rather than installing only `SKILL.md`:
 
-## Prerequisites
+```bash
+mkdir -p "$HOME/.codex/skills/llmsend/scripts"
+ln -f "$HOME/Code/llmsend/skills/llmsend/SKILL.md" "$HOME/.codex/skills/llmsend/SKILL.md"
+ln -f "$HOME/Code/llmsend/skills/llmsend/scripts/inbox-awareness-hook" "$HOME/.codex/skills/llmsend/scripts/inbox-awareness-hook"
+ln -f "$HOME/Code/llmsend/skills/llmsend/scripts/block-prompt-injection-hook" "$HOME/.codex/skills/llmsend/scripts/block-prompt-injection-hook"
+ln -f "$HOME/Code/llmsend/skills/llmsend/scripts/notify-session" "$HOME/.codex/skills/llmsend/scripts/notify-session"
+```
 
-- Each project runs in a tmux session named after the project (by
-  convention: the project directory's basename).
-- Claude recipients accept Kitty CSI-u Enter. Codex recipients accept tmux's
-  explicit bracketed paste followed by plain Enter. Unknown backends safely get
-  file-only delivery rather than speculative key injection.
-- Reach to the recipient: filesystem access between sender and
-  recipient project trees on the same machine, OR — for
-  `<session>@<host>` cross-machine addressing — the recipient host on
-  the same tailnet with `BatchMode=yes` SSH key auth. (Bare `<session>`
-  names stay local and unchanged; `@<host>` is opt-in.)
+Wire `inbox-awareness-hook` into both `UserPromptSubmit` and `PostToolUse` for
+Claude and Codex. During migration, also wire `block-prompt-injection-hook`
+into the shell tool's `PreToolUse` hooks. It blocks only LLMsend-shaped tmux
+input injection; ordinary tmux automation, including answering a trust prompt,
+remains available. Restart existing sessions after changing skill or hook
+configuration.
+
+## Validate
+
+```bash
+./test
+```
 
 ## License
 

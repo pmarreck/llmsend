@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+# Notify the watching human through tmux's status line without writing bytes to
+# the agent pane's terminal input stream.
+set -u
+
+usage() {
+	printf '%s\n' \
+		'Usage: notify-session SESSION MESSAGE' \
+		'Show a side-band tmux status message; never inject terminal input.'
+}
+
+case "${1:-}" in
+	-h|--help) usage; exit 0 ;;
+	--about)
+		printf 'notify-session 0.1.0 — editor-independent LLMsend notice — %s %s\n' "$(uname -s)" "$(uname -m)"
+		exit 0
+		;;
+esac
+
+if [ "$#" -ne 2 ] || [ -z "$1" ] || [ -z "$2" ]; then
+	usage >&2
+	exit 2
+fi
+
+session="$1"
+message="$2"
+case "$session" in *[$'\r\n']*) printf 'invalid session name\n' >&2; exit 2 ;; esac
+case "$message" in *[$'\r\n']*) printf 'invalid notification text\n' >&2; exit 2 ;; esac
+
+tmux_command="${LLMSEND_TMUX:-tmux}"
+if ! "$tmux_command" has-session -t "$session" 2>/dev/null; then
+	printf 'no tmux session named %s\n' "$session" >&2
+	exit 1
+fi
+
+"$tmux_command" display-message -t "$session" -- "$message"

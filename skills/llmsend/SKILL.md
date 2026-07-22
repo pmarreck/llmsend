@@ -1,512 +1,198 @@
 ---
 name: llmsend
 description: >-
-  Send a message between Claude Code or Codex sessions running related
-  projects, on the same machine OR across machines over tailscale. Drops a
-  markdown note in the recipient's inbox/ directory and live-pings their
-  tmux session so they pick it up immediately. Use when sibling projects
-  need to coordinate — passing handoff notes, design questions, status
-  updates, fix requests. Addressing: bare `<session>` = local;
-  `<session>@<host>` = a session on another tailnet machine. Two-channel
-  design — the file is the durable record; the tmux ping is the live
-  "check your mail" ping.
+  Send durable messages between Claude Code or Codex sessions on one machine
+  or across Tailscale. Use for cross-project handoffs, status updates, design
+  questions, fix requests, or acknowledgements. Every message is an inbox
+  file; agent-owned hooks surface pending paths through additionalContext,
+  while an optional tmux status-line notice alerts the watching human without
+  injecting terminal input.
 ---
 
 # LLMsend
 
-Two-channel inter-LLM messaging between Claude Code or Codex sessions
-running in named tmux sessions, where each session corresponds to one
-project.
+Coordinate project-named Claude Code and Codex sessions through a durable inbox
+and an editor-independent hook channel.
 
-The **inbox file** under `<recipient-project>/inbox/` is the durable
-record — it survives session restarts, is grep-able, and forms a
-permanent audit trail. The **tmux send-keys ping** is a live "you have
-mail" notification so the recipient picks it up at their next prompt
-rather than at their next manual inbox poll.
+## Safety invariant
 
-<prerequisites>
-- Both sender and recipient run inside `tmux`.
-- Each session is named after its project — by convention the project
-  directory's basename, but the convention can be overridden if the
-  project's owner has chosen a different session name.
-- Submission is **backend-specific**. Kitty CSI-u Enter bytes (`\e[13u` /
-  `-H 1b 5b 31 33 75`) work for Claude panes inside tmux. Codex's paste-burst
-  guard can reinterpret rapidly injected text plus Enter as pasted text with a
-  newline; CSI-u and `C-m` therefore left live pings unsubmitted. Explicit
-  bracketed paste (`tmux paste-buffer -p`) followed by a separate plain Enter
-  reliably invoked Codex's submit action without a timing sleep (verified on
-  Thelio, 2026-07-17). The inbox file remains the durable delivery channel.
-</prerequisites>
+Never write bytes into another agent pane's terminal input stream. A screen can
+look idle and still race with a human keystroke; cursor position, wrapping,
+ANSI intensity, ghost suggestions, and terminal geometry are not an atomic
+input-buffer oracle.
+
+Use exactly two channels:
+
+1. Write a Markdown note under the recipient project's `inbox/`. This is the
+   authoritative delivery.
+2. Let `scripts/inbox-awareness-hook` expose changed pending paths through the
+   agent application's `additionalContext` hook result. Optionally call
+   `scripts/notify-session` to show the watching human a tmux status message.
+
+If the hook is absent, delayed, or fails, stop at file delivery plus the safe
+status-line notice. Never fall back to terminal input injection. There is no
+ping-only mode: every agent-directed message must have a durable note.
+
+## Prerequisites
+
+- Keep one project per named tmux session; normally the session name equals the
+  project directory basename.
+- Install the awareness hook for both `UserPromptSubmit` and `PostToolUse`.
+  The first catches mail safely after a human submits; the second catches mail
+  during autonomous work without waiting for another prompt.
+- For cross-machine delivery, use Tailscale plus SSH key authentication with
+  `BatchMode=yes`. Never use password authentication or an untrusted network.
+- Confirm with Peter before contacting a recipient not already approved in the
+  current conversation.
 
 ## Sender workflow
 
-<sender_steps>
+### 1. Resolve the recipient
 
-### Step 1 — verify YOU are in the right tmux session (once per session)
+Bare `SESSION` means local. `SESSION@HOST` means the named session on the
+Tailscale MagicDNS host.
 
-Fast detection: compare the current tmux session name to the project
-directory basename. If they match, you're set.
-
-```bash
-session="$(tmux display-message -p '#S' 2>/dev/null)"
-project="$(basename "$(git rev-parse --show-toplevel 2>/dev/null || pwd)")"
-if [ -z "$session" ]; then
-    echo "ERROR: not in a tmux session — LLMsend requires tmux"
-    exit 1
-elif [ "$session" != "$project" ]; then
-    echo "WARNING: tmux session ($session) doesn't match project ($project)"
-    # Confirm with user before proceeding — naming convention may be
-    # intentional or session may be the wrong one for this project.
-fi
-```
-
-You only need to verify this once per agent session. Cache the
-result.
-
-### Step 2 — verify the RECIPIENT session exists (once per recipient per session)
+For a local session:
 
 ```bash
-recipient="<project-name>"
-if ! tmux list-sessions -F '#S' 2>/dev/null | grep -qx "$recipient"; then
-    echo "ERROR: no tmux session named '$recipient' — recipient unreachable"
-    # Ask the user how to proceed (start the session? abort? different name?)
-    exit 1
-fi
+tmux has-session -t "$session"
+recipient_dir="$(tmux display-message -p -t "$session" '#{pane_current_path}')"
 ```
 
-<important>
-If the recipient is a project you have NOT messaged before in this
-conversation, **confirm with the user** before sending. Reasons:
-1. The session might exist but not be running a Claude Code or Codex instance.
-2. The recipient backend must be identified so its matching submit protocol is
-   used; an unknown backend gets file-only delivery rather than guessed keys.
-3. There may be a privacy / process reason the user wants you NOT to
-   ping that recipient automatically.
-
-Once confirmed for a given recipient in a session, you don't need to
-re-confirm for subsequent messages to the same recipient.
-</important>
-
-### Step 3 — ensure the recipient's `inbox/` directory exists
-
-The convention: `<recipient-project-dir>/inbox/`. Create it if absent.
+For a remote session, keep the complete remote command in one quoted string so
+the remote shell cannot reinterpret tmux's `#` format syntax:
 
 ```bash
-recipient_dir="<full path to recipient project>"
-mkdir -p "$recipient_dir/inbox"
+ssh -o BatchMode=yes "$host" "tmux has-session -t '$session'"
+recipient_dir="$(ssh -o BatchMode=yes "$host" \
+  "tmux display-message -p -t '$session' '#{pane_current_path}'")"
 ```
 
-The full path depends on the user's project layout. Common patterns:
-sibling directories under a shared parent, or use `tmux display-message
--pt "$recipient" '#{pane_current_path}'` to ask tmux where the
-recipient is currently rooted.
+Resolve the project root from that directory when needed. Do not assume the
+pane happens to remain at its repository root.
 
-### Step 4 — write the markdown note in the recipient's inbox
+### 2. Write the durable note
 
-File naming convention: `YYYY-MM-DD-<short-topic>.md` (date-first so
-they sort chronologically; topic-second so they're readable in `ls`).
-Append `-NNN` if multiple notes are dropped on the same day with the
-same topic (rare).
+Create `inbox/` if needed. Name notes
+`YYYY-MM-DD-from-SENDER-TOPIC.md`, adding a numeric suffix on collision. For
+cross-machine notes, identify the sender as `SESSION@HOST` in both the filename
+and the `From:` field so replies are routable.
 
-```
-<recipient-project-dir>/inbox/2026-05-07-status-update.md
-```
-
-Note body conventions (recommended, not strict):
-
-- **Header line** with `From:`, `Date:`, and `Re:` (if replying to a
-  prior note — include the path of the prior note for traceability).
-- **TL;DR** at the top if the note is long.
-- **Body** with the substantive content.
-- **Sign-off** with `— <sender-project>` so the recipient knows who
-  to reply to.
-
-Example skeleton:
+Recommended body:
 
 ```markdown
-# <Subject>
+# Subject
 
-**From:** <sender-project>
+**From:** sender-or-session@host
 **Date:** YYYY-MM-DD
-**Re:** <path to prior note, if any>
+**Re:** prior note path, when replying
+**FYI only — no response needed.**
 
 ## TL;DR
 
-<one or two sentences>
+One or two sentences.
 
-## <Body sections>
+## Details
 
-...
+The durable content.
 
-— <sender-project>
+— sender
 ```
 
-If no response is expected, **say so explicitly** at the top of the
-note (e.g. `**FYI only — no response needed.**`). Without that the
-recipient will assume a reply is wanted.
-
-### Step 5 — notify with the recipient backend's submit protocol
-
-The two-channel design means the note file is authoritative. Detect the pane's
-foreground agent, then use its tested input protocol. Codex needs explicit
-bracketed-paste boundaries so its paste-burst protection cannot absorb the
-following Enter as a newline.
-
-**Before you send, glance at the recipient's input line _with ANSI
-codes_** so you don't clobber a real mid-typed draft. A dim/grey line
-after `❯` is just Claude Code's suggested reply (safe to type over);
-normal-intensity text is a real draft (hold, or use the inbox note
-alone). See "Disambiguate the input line" under the Race / collision
-caveat below for the one-liner.
+Omit the FYI line when a response is expected. Stream remote note contents over
+standard input instead of embedding them in a remote command:
 
 ```bash
-ping_text="📬 New inbox message from <sender-project>: <full-path-to-note>"
-[ "$response_expected" = "no" ] && ping_text="$ping_text (FYI only)"
-
-recipient_agent="$(tmux display-message -p -t "$recipient" '#{pane_current_command}')"
-case "$recipient_agent" in
-	claude|node)
-		tmux send-keys -t "$recipient" -l "$ping_text"
-		tmux send-keys -t "$recipient" -H 1b 5b 31 33 75
-		;;
-	codex)
-		ping_buffer="llmsend-ping-$$"
-		tmux set-buffer -b "$ping_buffer" "$ping_text"
-		tmux paste-buffer -d -p -r -b "$ping_buffer" -t "$recipient"
-		tmux send-keys -t "$recipient" Enter
-		;;
-	*)
-		echo "NOTE: inbox file delivered; unknown pane command '$recipient_agent', so no keys were injected" >&2
-		;;
-esac
+ssh -o BatchMode=yes "$host" \
+  "mkdir -p '$recipient_dir/inbox' && cat > '$recipient_dir/inbox/$notefile'" \
+  < "$local_note"
 ```
 
-After sending, recapture the pane and confirm the recipient started processing
-or queued the ping. This guards against version-shaped input changes. Seeing a
-ping plus a blank line is not enough; that failure mode was observed live.
+### 3. Notify without touching the editor
 
-**Critical syntax notes:**
-
-- The content injection and submit key are separate operations. Do not append
-  Enter to the content operation.
-- `paste-buffer -p` is intentional for Codex: it emits bracketed-paste start and
-  end markers. Do not replace it with rapid `send-keys -l` plus a sleep.
-- Use the 📬 emoji as a visual signal to the recipient that this is
-  an inter-LLM ping vs. user input. Optional but recommended.
-
-</sender_steps>
-
-## Lightweight mode — ping-only (inbox note optional)
-
-The inbox note exists for **durability and elucidation**. When a message
-needs neither, skip Steps 3–4 and put the entire message in the tmux ping
-itself:
+For a local recipient:
 
 ```bash
-ping_text="📬 <sender> (live ping, no inbox note): <the whole message>"
-# Inject and submit ping_text using the complete backend-specific case statement
-# from Step 5; Codex needs the content itself delivered by paste-buffer -p.
+skills/llmsend/scripts/notify-session "$session" \
+  "📬 Inbox note delivered: $recipient_dir/inbox/$notefile"
 ```
 
-**Decision rule — write a full inbox note when ANY of these hold; otherwise
-ping-only is fine:**
+For a remote recipient, invoke the same script on that host when installed, or
+use tmux's status-message facility directly over `BatchMode=yes` SSH. This
+notice is for the human; the application hook is what informs the agent.
 
-- The content carries decisions, specs, briefs, or anything a future
-  session might need to re-read (durable record wanted).
-- Delivery MUST happen — ping-only has **no fallback**: if it lands in a
-  mid-typing draft or a dead session, it is simply lost (see the collision
-  caveat below, which bites harder here).
-- The message is longer than a sentence or two — long pings are hostile
-  to the recipient's input buffer and to any human watching the pane.
+Do not claim the recipient agent has read the note until it acknowledges or
+otherwise demonstrates that it consumed the file.
 
-Good ping-only uses: status nudges ("how's the build?"), acks, elapsed-time
-checks, "look at X when you surface" pointers. Mark them clearly with
-`(live ping, no inbox note)` so the recipient knows there is no file to
-read or delete.
+## Recipient hook
 
-## Cross-machine addressing (tailscale) — `<session>@<host>`
+`scripts/inbox-awareness-hook` reads hook JSON from stdin and:
 
-LLMsend works across machines on a **tailnet** using plain SSH — no daemon,
-no new transport. The two channels are unchanged; only the *reach* extends.
+- resolves the current project root and its direct, visible regular `*.md`
+  inbox entries;
+- fingerprints filename plus content without copying note bodies into context;
+- emits the complete changed pending-path set as `additionalContext`;
+- remains silent when the set is unchanged;
+- stores per-session, per-project deduplication state under
+  `${XDG_STATE_HOME:-$HOME/.local/state}/llmsend-inbox-awareness`.
 
-### The address grammar
+Wire this command into both agents' `UserPromptSubmit` and `PostToolUse` hooks:
 
-- **`<session>`** (bare) — a session on THIS machine. **Grandfathered: zero
-  change, always local.** Nobody is forced onto `@host` — bare addressing is
-  the default and keeps working exactly as before. During a fleet migration,
-  address a project bare when its live session is on your box.
-- **`<session>@<host>`** — the session named `<session>` on tailnet machine
-  `<host>`, where `<host>` is the **tailscale MagicDNS name** (`tailscale
-  status`, or the machine's `hostname`). Opt-in, additive.
+```text
+$HOME/Code/llmsend/skills/llmsend/scripts/inbox-awareness-hook
+```
 
-The fleet convention still holds: `<session>` == the project directory
-basename == the "agent name". So `validate_gui@thelio-pm` is the
-validate_gui agent on the Thelio; `validate_gui@peters-macbook-pro-m4-max`
-is the one on the Mac — and during a migration BOTH can be live at once,
-which is exactly why the `@host` qualifier exists.
+The command returns the event name it received, so the same executable serves
+both hook types. It never reads terminal dimensions or screen contents; resizing
+and reflow therefore cannot affect its verdict.
 
-### Prerequisites (cross-machine)
+When notified, read each path, act on it, then move it to a project-defined
+`inbox/processed/` directory or remove it according to that project's data
+policy. Check remaining inbox paths before replying. Use this sender workflow
+for replies and retain the original note path in `Re:`.
 
-- **Tailnet-only, key-auth only.** Cross-machine send-keys IS remote
-  keystroke injection into another agent's pty. Do it ONLY over the trusted
-  tailnet with `BatchMode=yes` SSH key auth. **Never** over an untrusted
-  network; **never** with password auth. This is guardrail #5 and it is not
-  optional.
-- Repos live at the same path on every box (fleet convention: `~/Code/<name>`),
-  so recipient-dir resolution stays mechanical.
+## MFIC control
 
-### Sender workflow — the same 5 steps, with SSH substitutions
+The independent oracle is the agent application's own hook event, not a visual
+guess produced by the sender. The hook's `additionalContext` channel bypasses
+the editor buffer entirely. The repository's `./test` command supplies the
+blocking control: it rejects prompt-injection primitives in shipped skill
+content, mechanically classifies pending-file types, verifies content-change
+deduplication, and proves identical output across distinct terminal sizes.
 
-**Your own address** (for `From:` headers): `"$(tmux display-message -p
-'#S')@$(hostname)"`. Cross-machine notes MUST carry a `From: <session>@<host>`
-header (reply routing depends on it), and the filename gains the origin:
-`YYYY-MM-DD-from-<session>@<host>-<topic>.md`.
+Wire `scripts/block-prompt-injection-hook` into the shell tool's `PreToolUse`
+hooks during migration. It blocks LLMsend-shaped tmux input-mutation commands
+while allowing ordinary tmux automation such as answering a trust prompt.
+This independent enforcement layer catches stale sessions that still remember
+the old delivery protocol.
 
-**Step 2 — verify the recipient session exists** (guardrail #3: guard every
-remote ping; a missing session errors noisily):
+This is reasonable assurance against accidental draft corruption. An agent
+with arbitrary shell access could devise an unrecognized input-injection
+primitive, so stronger adversarial control would require denying terminal
+input mutation at the operating-system or tmux-policy boundary.
+
+## Cross-machine guardrails
+
+- Send in small batches; never broadcast across the fleet.
+- Use `jj --ignore-working-copy` for scripted Jujutsu reads to avoid watchman
+  snapshots and lock contention.
+- Treat the machine with the canonical working copy as the project's home box.
+- A missing session does not invalidate a successfully written inbox note.
+- A network failure means neither channel arrived; fix reachability and retry.
+- The `From: SESSION@HOST` field is the cross-machine return address.
+
+## Installation and validation
+
+Claude can use a symlinked skill directory. Codex currently needs a real skill
+directory with regular files, so hard-link or copy both `SKILL.md` and bundled
+scripts; installing only `SKILL.md` omits the executable safety mechanism.
+
+Run:
 
 ```bash
-ssh -o BatchMode=yes "$host" tmux has-session -t "$session" 2>/dev/null \
-  || { echo "ERROR: no session '$session' on '$host'"; exit 1; }
+./test
 ```
 
-**Step 3 — resolve the recipient dir + write the note.** The critical
-quoting rule (learned by dogfooding this recipe and watching it FAIL,
-2026-07-06): **wrap the whole remote command in ONE double-quoted string**
-so the local shell doesn't strip inner quotes and SSH doesn't rejoin bare
-args for the remote shell to re-parse. Bare
-`ssh host tmux display-message -pt X '#{pane_current_path}'` lets the remote
-shell see `#{...}` UNQUOTED — and `#` starts a comment, so tmux runs with no
-format and returns garbage. Keep the format single-quoted INSIDE the outer
-double quotes:
-
-```bash
-# where the recipient session is rooted, on its machine:
-rdir="$(ssh -o BatchMode=yes "$host" "tmux display-message -p -t '$session' '#{pane_current_path}'")"
-# produce the note LOCALLY, stream it over SSH (outer double quotes → one
-# remote command; inner single quotes protect the paths):
-ssh -o BatchMode=yes "$host" "mkdir -p '$rdir/inbox' && cat > '$rdir/inbox/$notefile'" < ./localnote.md
-```
-
-**Step 5 — ping with the remote backend's protocol.** Detect the pane command,
-then use Kitty CSI-u for Claude or bracketed paste plus plain Enter for Codex:
-
-```bash
-msg="📬 New inbox message from $self: $rdir/inbox/$notefile"   # keep free of single-quotes
-recipient_agent="$(ssh -o BatchMode=yes "$host" \
-  "tmux display-message -p -t '$session' '#{pane_current_command}'")"
-case "$recipient_agent" in
-	claude|node)
-		ssh -o BatchMode=yes "$host" "tmux send-keys -t '$session' -l '$msg'"
-		ssh -o BatchMode=yes "$host" "tmux send-keys -t '$session' -H 1b 5b 31 33 75"
-		;;
-	codex)
-		ping_buffer="llmsend-ping-$$"
-		printf '%s' "$msg" | ssh -o BatchMode=yes "$host" \
-		  "tmux load-buffer -b '$ping_buffer' - &&
-		   tmux paste-buffer -d -p -r -b '$ping_buffer' -t '$session' &&
-		   tmux send-keys -t '$session' Enter"
-		;;
-	*)
-		echo "NOTE: inbox file delivered; unknown remote pane command '$recipient_agent', so no keys were injected" >&2
-		;;
-esac
-```
-
-The Codex path streams message bytes through standard input, avoiding a second
-round of remote-shell quoting. Keep the Claude-path `$msg` free of single quotes.
-Do not claim live delivery unless the remote pane processes or queues the ping.
-
-### Guardrails (hard-won; violate at your peril)
-
-1. **BATCH, NEVER BROADCAST.** Never fan a ping across many sessions at
-   once — a `send-keys` storm caused a watchman thundering-herd lockup AND
-   tripped Anthropic's automation flag (both observed live, 2026-07-06).
-   Cross-machine amplifies both. Send to at most ~4 recipients per batch
-   with pauses between; never all-sessions-at-once.
-2. **jj/watchman wedges under concurrency.** Simultaneous jj ops across
-   boxes — even `jj status`, which SNAPSHOTS (not read-only) — can lock
-   watchman. For any scripted/agent jj READ, use `jj --ignore-working-copy`.
-   Recovery: `jj --config fsmonitor.backend=none util snapshot`, then
-   `killall -9 watchman`.
-3. **File is truth; ping is best-effort — more so across machines.** The
-   inbox note is the durable channel; the remote ping fails more ways
-   (session gone, tmux version, mid-typing draft). Always guard the ping
-   with `tmux has-session` (Step 2) and prefer a full note for anything
-   that must not be lost.
-4. **Match the backend; do not guess keys.** Claude uses CSI-u Enter. Codex uses
-   bracketed paste followed by plain Enter. An unknown pane command gets
-   file-only delivery. The authoritative sign of live delivery is the recipient
-   processing or queueing the ping. Still **wrap every remote command in one
-   outer double-quoted string** so the remote shell never re-splits arguments or
-   comment-eats a `#{...}` format.
-5. **Tailnet-only, key-auth only** (see prerequisites).
-6. **"Home box" == the machine holding the canonical WORKING COPY.** Tie to
-   the fleet invariant: uncommitted work lives on exactly ONE machine.
-   Handoff etiquette when a project moves boxes: drop a **wind-down note**
-   in the departing session's own inbox pointing at the new home, then let
-   the new box become canonical. (This is the same mechanism as a fleet
-   migration; during one, `@host` keeps addressing unambiguous.)
-
-## Recipient workflow
-
-<recipient_steps>
-
-**Live pings first:** a message marked `(live ping, no inbox note)` IS the
-entire message — there is no file to read or delete. Act on it directly
-and skip Steps 2–3 for that message.
-
-### Step 1 — see the ping in your prompt area
-
-A line like `📬 New inbox message from <project>: <path>` arriving in your
-transcript indicates a new note. The sender uses a backend-specific submit
-protocol and verifies processing; the inbox remains authoritative if that fails.
-
-If multiple pings arrive while you're mid-task, the inbox is the
-ground truth — handle them in order after the current task settles.
-
-### Step 2 — read the note
-
-```bash
-cat "<path-from-the-ping>"
-```
-
-The note's contents become part of your context. Treat it as you
-would any user message at this priority — if it's an FYI, log
-it; if it asks a question, prepare a reply; if it's a fix request,
-queue it as a task.
-
-### Step 3 — delete the note after reading
-
-<important>
-Delete each note after you've fully consumed it. The inbox is a
-queue, not a log — it should not accumulate. If you don't delete,
-future you will see the same note again and can't tell whether it
-was handled.
-</important>
-
-```bash
-rm "<path-from-the-ping>"   # or move to a /processed/ dir if your
-                            # project wants an audit trail
-```
-
-If your project has a stronger audit-trail policy, move the note to
-an `inbox/processed/` subdirectory instead of deleting. The default
-is delete.
-
-### Step 4 — check for other lingering notes
-
-After reading the named note, scan the rest of the inbox for anything
-that didn't get cleaned up — either previous notes whose pings landed
-during user typing (and got swallowed into a draft), or pings sent
-to a session that wasn't yet running a Claude Code or Codex instance.
-
-```bash
-ls -la <your-inbox>/
-```
-
-Handle anything you find. Same flow: read, act, delete.
-
-### Step 5 — reply if requested
-
-If the sender asked for a response, follow the sender workflow above
-to drop a note in their inbox and ping them back. Reference the
-original note's path in your reply's `Re:` header.
-
-**Cross-machine replies:** if the sender's `From:` header is
-`<session>@<host>` (not a bare name), the sender is on another machine —
-reply back over SSH to that same `<host>` using the cross-machine sender
-steps, not a local `tmux send-keys`. The `From:` header IS the return
-address; a cross-machine note without one is a dead letter.
-
-If no response is needed (sender said `FYI only`), don't reply — but
-do delete the original note per Step 3.
-
-</recipient_steps>
-
-## Why two channels (file + tmux ping)?
-
-- **The file is durable.** It survives session crashes, can be grep-ed
-  later, and acts as a record of what was communicated when. If the
-  ping fails (terminal mode mismatch, recipient's session paused,
-  user typing at the moment), the note is still there for next time.
-- **The ping is live.** Without it, the recipient only sees new notes
-  on their next manual `ls inbox/`. With it, they see the ping
-  immediately and pick up the message at their next prompt.
-- **Either channel alone is incomplete.** File-only is too slow.
-  Ping-only is too fragile (lost on every collision).
-
-## Race / collision caveat
-
-If the recipient is mid-typing a **real draft** when send-keys fires,
-the ping concatenates into it. But a real draft and a false alarm look
-**identical without colour** — so read the pane **with ANSI codes** to
-tell them apart before sending:
-
-- **Dim/grey text** (SGR 2, `\e[2m`) after the `❯` is Claude Code's
-  **suggested next reply** (ghost autocomplete), NOT a real draft.
-  Typing over it just replaces it — **safe to send.**
-- **Normal-intensity text** after the `❯` is a **real mid-typed draft**.
-  Sending would clobber it — **hold**, or fall back to the inbox note
-  alone (it is authoritative; the recipient catches it on the next
-  inbox scan, Step 4).
-
-### Disambiguate the input line — do this before every send-keys
-```bash
-tmux capture-pane -pet "$recipient" -S -3 | gcat -v | tail -3   # READ the input line
-#   input line's text wrapped in ^[[2m … ^[[0m => dim suggestion => safe to type over
-#   input line's text at normal intensity       => real draft     => HOLD / inbox-only
-#   nothing after the prompt glyph               => idle           => safe to send
-# Quick boolean (dim run present near input?):  … | gcat -v | tail -3 | grep -c '\[2m'  (>0 ⇒ suggestion)
-# GOTCHA: grep the dim CODE '\[2m', NOT the ❯ glyph — `gcat -v` mangles the multibyte
-# ❯ into M-b… bytes, so a literal ❯ grep matches NOTHING (a false "empty/idle" reading).
-```
-`capture-pane -e` includes the escape sequences and `gcat -v` renders
-ESC as `^[`, so the `^[[2m` dim marker becomes visible. **Without `-e`
-the suggestion and a real draft are indistinguishable — that is the
-trap** (a dim suggestion looks like a draft, so you "hold" forever, or
-you assume it's a suggestion and clobber a real one). `cat -v` is GNU
-coreutils; on macOS use `gcat`. A one-glance check turns "occasional
-clobber" into "never clobber" — and the live-ping latency win still
-stands.
-
-## Common failure modes
-
-| Symptom | Likely cause | Fix |
-|---|---|---|
-| Ping lands but doesn't submit, sits as a draft or prompt line | Wrong backend detected or agent input protocol changed | File delivery still succeeded; use manual Enter, then update the backend-specific protocol with a reproducing test |
-| `tmux send-keys` returns non-zero | Recipient session doesn't exist | Verify with `tmux list-sessions` |
-| Garbage characters appear at recipient | An escape-byte submit path was interpreted as text | Fall back to file-only delivery and tell the user manual Enter is required |
-| Recipient never reads the note | Inbox dir doesn't exist or sender wrote to wrong path | Verify path; recipient may need to add inbox-watching to their startup routine |
-| Two notes with the same filename | Both senders dropped on the same day with the same topic | Append `-NNN` suffix to disambiguate |
-| Ping sent right after Esc/interrupt silently vanishes | Recipient's input buffer is cleared during turn teardown (observed live, 2026-06-11) | After interrupting, wait until the recipient's pane shows an idle prompt (`capture-pane` → `❯`) before sending; or use a full inbox note, which survives regardless |
-| Ping shows "Press up to edit queued messages" but is never read | Queued messages don't preempt — the recipient may have self-started a new turn (e.g. resuming its todo list after an interrupt), and your ping waits behind it indefinitely (also observed live, 2026-06-11) | "Queued" ≠ "read". For urgent delivery, verify the recipient's spinner is processing YOUR message; if it's grinding its own work, a (second) Esc ends that turn and releases the queue |
-| Cross-machine ping/note fails with an SSH error | Recipient host unreachable, not on the tailnet, or key auth not set up | `ssh -o BatchMode=yes <host> true` to confirm reachability + key auth; `tailscale status` to confirm the host is on the tailnet. The inbox note can't be written either, so nothing was delivered — fix the link and retry |
-| Cross-machine note delivered but reply never arrives | Note lacked a `From: <session>@<host>` header, so the recipient can't route back across machines | Always include the `From:` origin header + origin-in-filename for cross-machine notes; it is the return address |
-| Ambiguous which machine a project's session is on | Same-named session live on two boxes during a fleet migration | Use the `<session>@<host>` qualifier; the "home box" (canonical working copy) is authoritative — see guardrail #6 |
-| `jj`/watchman hangs after a burst of cross-machine coordination | Concurrent jj snapshots across boxes locked watchman (guardrail #2) | `jj --config fsmonitor.backend=none util snapshot` then `killall -9 watchman`; use `jj --ignore-working-copy` for scripted reads |
-
-## Sharing this skill
-
-This skill is project-agnostic — it depends on tmux, durable inbox files,
-best-effort submit attempts, and either a shared filesystem (same machine) or
-tailnet SSH (across machines). To use it, anyone needs:
-
-1. A multi-project setup where each project runs in its own
-   project-named tmux session.
-2. Claude Code or Codex instances in those sessions; use CSI-u Enter for Claude
-   and bracketed paste plus plain Enter for Codex.
-3. Reach to the recipient: same-machine filesystem access, OR — for
-   `<session>@<host>` addressing — the recipient host on the same
-   tailnet with `BatchMode=yes` SSH key auth (guardrail #5).
-
-Drop this `SKILL.md` into `~/.claude/skills/llmsend/` for Claude Code or
-`~/.codex/skills/llmsend/` for Codex. Codex 0.142.x requires a real
-directory and regular-file `SKILL.md` under `~/.codex/skills`; symlinked
-skill directories and symlinked `SKILL.md` files are skipped during discovery.
-When the skill repo and `~/.codex` are on the same filesystem, hard-link the
-Codex `SKILL.md` to the canonical file; otherwise copy it. If a future update
-replaces the canonical `SKILL.md` inode, rerun the hard-link command. The next
-session start will pick it up. Confirm with the user before pinging recipients
-you haven't messaged before — the convention may not yet be established for
-that project, and the user should opt in explicitly the first time.
+Also run the skill validator after edits. Restart existing agent sessions after
+installing skill content or hook configuration so both the discovered skill and
+hook registry are current.

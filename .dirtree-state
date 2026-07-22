@@ -2,5 +2,12 @@
 ver=1.2
 annotate=[
 	PLAN.md = Current llmsend protocol work and curiosity checks
+	PROJECT_OVERVIEW.md = Defines LLMsend's durable two-channel architecture and resize-independent safety invariant.
+	RULES.md = Non-negotiable delivery and data-safety invariants.
+	flake.nix = Packages the cross-platform hook scripts and exposes the complete Nix check.
 	skills/llmsend/SKILL.md = Durable inbox plus backend-specific local and tailnet tmux notification protocol for Claude and Codex
+	skills/llmsend/scripts/block-prompt-injection-hook = Migration guard that blocks LLMsend-shaped terminal input injection.
+	skills/llmsend/scripts/inbox-awareness-hook = Agent-owned hook that reports changed pending inbox paths without touching the editor buffer.
+	skills/llmsend/scripts/notify-session = Human-only tmux status notification with no pane input mutation.
+	test = Runs the complete deterministic unit and integration suite.
 ]

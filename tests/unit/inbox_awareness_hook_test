@@ -1,0 +1,68 @@
+#!/usr/bin/env bash
+set -u
+
+root="$(cd "$(dirname "$0")/../.." && pwd)"
+source "$root/tests/testlib"
+
+hook="$root/skills/llmsend/scripts/inbox-awareness-hook"
+if [ ! -x "$hook" ]; then
+	fail "missing executable inbox-awareness-hook"
+	finish_tests inbox-awareness-hook
+fi
+
+sandbox="$(mktemp -d "${TMPDIR:-/tmp}/llmsend-hook.XXXXXX")"
+trap 'rm -rf -- "$sandbox"' EXIT
+project="$sandbox/project with spaces"
+inbox="$project/inbox"
+mkdir -p "$inbox" "$project/.git" "$sandbox/state"
+errors="$sandbox/hook.err"
+: > "$errors"
+
+payload="$(jq -cn --arg cwd "$project" '{session_id:"session-1",hook_event_name:"UserPromptSubmit",cwd:$cwd}')"
+
+run_hook() {
+	local state_dir="$1"
+	shift
+	printf '%s' "$payload" | env LLMSEND_HOOK_STATE_DIR="$state_dir" "$@" "$hook" 2>> "$errors"
+}
+
+out="$(run_hook "$sandbox/state")"
+assert_eq "" "$out" "empty inbox stays silent"
+
+note_one="$inbox/2026-07-22-first message.md"
+printf 'secret body must not enter hook context\n' > "$note_one"
+out="$(run_hook "$sandbox/state")"
+assert_contains "$out" '"hookEventName":"UserPromptSubmit"' "hook preserves the application event"
+context="$(printf '%s' "$out" | jq -r '.hookSpecificOutput.additionalContext')"
+assert_contains "$context" "$note_one" "new note path reaches agent context"
+assert_absent "$context" 'secret body' "hook exposes paths but never note bodies"
+
+out="$(run_hook "$sandbox/state")"
+assert_eq "" "$out" "unchanged pending set is deduplicated"
+
+printf 'ignore me\n' > "$inbox/not-a-note.txt"
+printf 'ignore me\n' > "$inbox/.hidden.md"
+mkdir -p "$inbox/nested"
+printf 'ignore me\n' > "$inbox/nested/nested.md"
+ln -s "$note_one" "$inbox/symlink.md"
+out="$(run_hook "$sandbox/state")"
+assert_eq "" "$out" "pending notes are classified as visible direct regular Markdown files"
+
+note_two="$inbox/2026-07-22-second.md"
+printf 'second\n' > "$note_two"
+out="$(run_hook "$sandbox/state")"
+context="$(printf '%s' "$out" | jq -r '.hookSpecificOutput.additionalContext')"
+assert_contains "$context" "$note_one" "changed set reports every still-pending note"
+assert_contains "$context" "$note_two" "changed set reports the newly pending note"
+
+printf 'second, revised\n' > "$note_two"
+out="$(run_hook "$sandbox/state")"
+assert_contains "$out" "$note_two" "same-name content replacement is a new delivery state"
+
+mkdir -p "$sandbox/narrow-state" "$sandbox/wide-state"
+narrow="$(run_hook "$sandbox/narrow-state" env COLUMNS=38 LINES=8)"
+wide="$(run_hook "$sandbox/wide-state" env COLUMNS=240 LINES=80)"
+assert_eq "$narrow" "$wide" "hook output is invariant under terminal resize"
+assert_eq 0 "$(wc -c < "$errors" | tr -d ' ')" "successful hooks have clean stderr"
+
+finish_tests inbox-awareness-hook

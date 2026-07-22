@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+set -u
+
+root="$(cd "$(dirname "$0")/../.." && pwd)"
+source "$root/tests/testlib"
+
+if [ ! -f "$root/flake.nix" ]; then
+	fail "missing reproducible flake.nix"
+else
+	for token in 'packages =' 'checks =' './test' 'inbox-awareness-hook' 'notify-session' 'block-prompt-injection-hook'; do
+		if ! rg -Fq -- "$token" "$root/flake.nix"; then fail "flake contract missing [$token]"; fi
+	done
+fi
+
+if [ ! -x "$root/build" ]; then
+	fail "missing canonical ./build"
+elif ! rg -Fq 'nix build' "$root/build"; then
+	fail "./build does not use the reproducible Nix package"
+fi
+
+finish_tests nix-contract

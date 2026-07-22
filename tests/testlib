@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+set -u
+
+failures=0
+
+fail() {
+	printf '  %s\n' "$*" >&2
+	failures=$((failures + 1))
+}
+
+assert_eq() {
+	local expected="$1"
+	local actual="$2"
+	local description="$3"
+	if [ "$actual" != "$expected" ]; then
+		fail "$description: expected [$expected], got [$actual]"
+	fi
+}
+
+assert_contains() {
+	local haystack="$1"
+	local needle="$2"
+	local description="$3"
+	case "$haystack" in
+		*"$needle"*) ;;
+		*) fail "$description: missing [$needle]" ;;
+	esac
+}
+
+assert_absent() {
+	local haystack="$1"
+	local needle="$2"
+	local description="$3"
+	case "$haystack" in
+		*"$needle"*) fail "$description: unexpectedly contains [$needle]" ;;
+		*) ;;
+	esac
+}
+
+finish_tests() {
+	local name="$1"
+	if [ "$failures" -eq 0 ]; then
+		printf '%s: PASS\n' "$name"
+	else
+		printf '%s: %d failure(s)\n' "$name" "$failures" >&2
+	fi
+	exit "$failures"
+}

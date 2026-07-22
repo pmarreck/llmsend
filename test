@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+set -u
+
+root="$(cd "$(dirname "$0")" && pwd)"
+failures=0
+
+for test_file in \
+	"$root/tests/unit/inbox_awareness_hook_test" \
+	"$root/tests/unit/notify_session_test" \
+	"$root/tests/unit/block_prompt_injection_hook_test" \
+	"$root/tests/integration/no_prompt_injection_test" \
+	"$root/tests/integration/nix_contract_test"
+do
+	output="$(bash "$test_file" 2>&1)"
+	status=$?
+	if [ "$status" -eq 0 ]; then
+		printf '%s\n' "$output"
+	else
+		printf 'FAIL: %s\n%s\n' "${test_file#"$root/"}" "$output" >&2
+		failures=$((failures + 1))
+	fi
+done
+
+if [ "$failures" -eq 0 ]; then
+	printf 'All tests passed.\n'
+else
+	printf '%d test file(s) failed.\n' "$failures" >&2
+fi
+
+exit "$failures"

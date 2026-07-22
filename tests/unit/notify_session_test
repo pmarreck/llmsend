@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+set -u
+
+root="$(cd "$(dirname "$0")/../.." && pwd)"
+source "$root/tests/testlib"
+
+notify="$root/skills/llmsend/scripts/notify-session"
+if [ ! -x "$notify" ]; then
+	fail "missing executable notify-session"
+	finish_tests notify-session
+fi
+
+sandbox="$(mktemp -d "${TMPDIR:-/tmp}/llmsend-notify.XXXXXX")"
+trap 'rm -rf -- "$sandbox"' EXIT
+calls="$sandbox/tmux.calls"
+fake_tmux="$sandbox/tmux"
+
+printf '#!%s\n' "$(command -v bash)" > "$fake_tmux"
+printf '%s\n' \
+	'set -u' \
+	'printf "%s\n" "$(printf "%s|" "$@")" >> "$LLMSEND_TEST_CALLS"' \
+	'[ "${1:-}" = has-session ] && [ "${3:-}" = missing ] && exit 1' \
+	'exit 0' >> "$fake_tmux"
+chmod +x "$fake_tmux"
+: > "$calls"
+
+LLMSEND_TMUX="$fake_tmux" LLMSEND_TEST_CALLS="$calls" \
+	"$notify" validate '📬 New inbox message: /tmp/note.md' >"$sandbox/out" 2>"$sandbox/err"
+assert_eq 0 "$?" "side-band notification"
+assert_contains "$(sed -n '1p' "$calls")" 'has-session|-t|validate|' "notification verifies the session"
+assert_contains "$(sed -n '2p' "$calls")" 'display-message|-t|validate|--|📬 New inbox message: /tmp/note.md|' "notification uses only the tmux status line"
+
+before="$(wc -l < "$calls" | tr -d ' ')"
+LLMSEND_TMUX="$fake_tmux" LLMSEND_TEST_CALLS="$calls" \
+	"$notify" validate $'unsafe\nmessage' >/dev/null 2>"$sandbox/control.err"
+assert_eq 2 "$?" "control characters are rejected"
+assert_eq "$before" "$(wc -l < "$calls" | tr -d ' ')" "rejected text reaches no tmux command"
+
+LLMSEND_TMUX="$fake_tmux" LLMSEND_TEST_CALLS="$calls" \
+	"$notify" missing 'message' >/dev/null 2>"$sandbox/missing.err"
+assert_eq 1 "$?" "missing session fails visibly"
+
+finish_tests notify-session

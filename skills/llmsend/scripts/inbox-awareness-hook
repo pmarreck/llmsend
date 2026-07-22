@@ -1,0 +1,97 @@
+#!/usr/bin/env bash
+# Surface changed inbox membership through an agent hook's additionalContext
+# channel; terminal input and terminal geometry are deliberately irrelevant.
+set -u
+
+manifest_to_remove=""
+
+cleanup() {
+	[ -z "$manifest_to_remove" ] || rm -f -- "$manifest_to_remove"
+}
+
+json_get() {
+	local document="$1"
+	local expression="$2"
+	printf '%s' "$document" | jq -r "$expression // empty" 2>/dev/null
+}
+
+state_key() {
+	local identity="$1"
+	local checksum bytes
+	read -r checksum bytes <<EOF
+$(printf '%s' "$identity" | cksum)
+EOF
+	printf '%s-%s\n' "$checksum" "$bytes"
+}
+
+write_pending_manifest() {
+	local inbox="$1"
+	local destination="$2"
+	local path relative checksum bytes
+	: > "$destination" || return 1
+	[ -d "$inbox" ] || return 0
+	while IFS= read -r path; do
+		relative="${path#"$inbox"/}"
+		case "$relative" in
+			*/*|.*|*.md) ;;
+			*) continue ;;
+		esac
+		case "$relative" in */*|.*) continue ;; esac
+		[ -f "$path" ] && [ ! -L "$path" ] || continue
+		read -r checksum bytes <<EOF
+$(cksum < "$path" 2>/dev/null)
+EOF
+		[ -n "${checksum:-}" ] && [ -n "${bytes:-}" ] || continue
+		printf '%s:%s\t%s\n' "$checksum" "$bytes" "$path" >> "$destination" || return 1
+	done < <(find "$inbox" -type f -print 2>/dev/null | LC_ALL=C sort)
+}
+
+main() {
+	command -v jq >/dev/null 2>&1 || return 0
+	command -v cksum >/dev/null 2>&1 || return 0
+
+	local input=""
+	if [ ! -t 0 ]; then input="$(cat 2>/dev/null || true)"; fi
+
+	local session event cwd root inbox state_dir manifest fingerprint state_file previous=""
+	session="$(json_get "$input" '.session_id // .sessionId // .thread_id // .threadId // .conversation_id')"
+	[ -n "$session" ] || session="default"
+	event="$(json_get "$input" '.hook_event_name // .hookEventName // .event')"
+	[ -n "$event" ] || event="UserPromptSubmit"
+	cwd="$(json_get "$input" '.cwd // .current_working_directory // .workspace_dir // .workspaceRoot')"
+	[ -n "$cwd" ] || cwd="$PWD"
+	[ -d "$cwd" ] || return 0
+	root="$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null || true)"
+	[ -n "$root" ] || root="$cwd"
+	inbox="$root/inbox"
+
+	state_dir="${LLMSEND_HOOK_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/llmsend-inbox-awareness}"
+	mkdir -p "$state_dir" 2>/dev/null || return 0
+	manifest="$(mktemp "${TMPDIR:-/tmp}/llmsend-inbox-manifest.XXXXXX")" || return 0
+	manifest_to_remove="$manifest"
+	trap cleanup EXIT
+	write_pending_manifest "$inbox" "$manifest" || return 0
+
+	fingerprint="$(cksum < "$manifest")"
+	state_file="$state_dir/state-$(state_key "$session"$'\n'"$root")"
+	if [ -f "$state_file" ]; then
+		previous="$(cat "$state_file" 2>/dev/null || true)"
+	fi
+	[ "$fingerprint" != "$previous" ] || return 0
+
+	local temporary="$state_file.tmp.$$"
+	printf '%s\n' "$fingerprint" > "$temporary" 2>/dev/null || return 0
+	mv -f "$temporary" "$state_file" 2>/dev/null || return 0
+
+	local count
+	count="$(wc -l < "$manifest" | tr -d '[:space:]')"
+	[ "$count" -gt 0 ] 2>/dev/null || return 0
+
+	local paths context
+	paths="$(cut -f2- "$manifest" | sed 's/^/- /')"
+	context="📬 Pending LLMsend inbox notes ($count). Read and process them before continuing; the files are authoritative:\n$paths"
+	jq -cn --arg event "$event" --arg context "$context" \
+		'{hookSpecificOutput:{hookEventName:$event,additionalContext:$context}}'
+}
+
+main "$@"

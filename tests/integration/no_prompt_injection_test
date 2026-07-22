@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+set -u
+
+root="$(cd "$(dirname "$0")/../.." && pwd)"
+source "$root/tests/testlib"
+
+targets=("$root/README.md" "$root/skills/llmsend/SKILL.md")
+if [ -d "$root/skills/llmsend/scripts" ]; then
+	while IFS= read -r path; do
+		[ "${path##*/}" = block-prompt-injection-hook ] || targets+=("$path")
+	done < <(find "$root/skills/llmsend/scripts" -maxdepth 1 -type f | sort)
+fi
+
+for forbidden in 'tmux send-keys' 'tmux paste-buffer' 'tmux load-buffer' 'tmux capture-pane'; do
+	if rg -Fq -- "$forbidden" "${targets[@]}"; then
+		fail "prompt-injection primitive remains available: $forbidden"
+	fi
+done
+
+if ! rg -Fq 'inbox-awareness-hook' "$root/skills/llmsend/SKILL.md"; then
+	fail "skill does not require application-owned hook delivery"
+fi
+if ! rg -Fq 'additionalContext' "$root/skills/llmsend/SKILL.md"; then
+	fail "skill does not identify the editor-independent context channel"
+fi
+
+finish_tests no-prompt-injection

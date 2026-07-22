@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+# Block only LLMsend-shaped tmux input injection. Other tmux automation, such
+# as answering an interactive trust prompt, remains available.
+set -u
+
+input=""
+if [ ! -t 0 ]; then input="$(cat 2>/dev/null || true)"; fi
+command_text="$(
+	printf '%s' "$input" | jq -r '
+		.tool_input.command //
+		.toolInput.command //
+		.input.command //
+		.arguments.command //
+		.command //
+		empty
+	' 2>/dev/null
+)"
+[ -n "$command_text" ] || exit 0
+
+lower="$(printf '%s' "$command_text" | tr '[:upper:]' '[:lower:]')"
+case "$lower" in
+	*llmsend*|*"new inbox message"*|*"/inbox/"*|*"📬"*) ;;
+	*) exit 0 ;;
+esac
+
+if printf '%s\n' "$lower" | grep -Eq '(^|[[:space:];|&"'"'"'()])([^[:space:];|&"'"'"'()]*/)?tmux[[:space:]]+(send-keys|paste-buffer|load-buffer)([[:space:];|&"'"'"'()]|$)'; then
+	printf '%s\n' \
+		'BLOCKED: LLMsend may not inject terminal input.' \
+		'Write the durable inbox note; the awareness hook delivers it outside the editor buffer.' >&2
+	exit 2
+fi
+
+exit 0
