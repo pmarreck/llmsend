@@ -37,6 +37,24 @@ context="$(printf '%s' "$out" | jq -r '.hookSpecificOutput.additionalContext')"
 assert_contains "$context" "$note_one" "new note path reaches agent context"
 assert_absent "$context" 'secret body' "hook exposes paths but never note bodies"
 
+# The hook runs before every prompt.  It must discover direct notes without a
+# recursive external traversal that can be delayed by an unrelated inbox subtree.
+fake_bin="$sandbox/fake-bin"
+mkdir -p "$fake_bin" "$sandbox/bounded-state"
+fake_find="$fake_bin/find"
+cat > "$fake_find" <<'EOF'
+#!/usr/bin/env bash
+exit 0
+EOF
+chmod +x "$fake_find"
+out="$(printf '%s' "$payload" | env -i \
+	HOME="$HOME" \
+	PATH="$fake_bin:$PATH" \
+	TMPDIR="${TMPDIR:-/tmp}" \
+	LLMSEND_HOOK_STATE_DIR="$sandbox/bounded-state" \
+	"$hook" 2>> "$errors")"
+assert_contains "$out" "$note_one" "hook discovers direct notes without recursive find"
+
 out="$(run_hook "$sandbox/state")"
 assert_eq "" "$out" "unchanged pending set is deduplicated"
 

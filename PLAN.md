@@ -1,5 +1,10 @@
 # Plan
 
+- [x] Bound inbox-awareness discovery to direct Markdown children, prove it does
+      not recursively invoke `find`, and retain content-change notifications.
+      Curiosity poke: prompt hooks must not walk unrelated nested artifacts
+      merely because a project has an `inbox/` directory. (2026-08-12 10:46
+      EDT; failing-then-passing regression test; full suite green.)
 - [x] Replace tmux prompt injection with durable inbox delivery plus agent-owned hook context. (2026-07-22 14:05 EDT)
   - Curiosity poke: a human may type between any screen check and key injection, so no capture-pane classifier can close the race.
 - [x] Add deterministic hook and side-band notification scripts with a complete Bash test runner. (2026-07-22 14:05 EDT)

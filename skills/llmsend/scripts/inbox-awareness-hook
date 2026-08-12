@@ -30,6 +30,8 @@ write_pending_manifest() {
 	local path relative checksum bytes
 	: > "$destination" || return 1
 	[ -d "$inbox" ] || return 0
+	# This runs before every prompt.  Only direct Markdown notes are eligible, so
+	# enumerate that bounded set instead of recursively walking unrelated trees.
 	while IFS= read -r path; do
 		relative="${path#"$inbox"/}"
 		case "$relative" in
@@ -43,7 +45,12 @@ $(cksum < "$path" 2>/dev/null)
 EOF
 		[ -n "${checksum:-}" ] && [ -n "${bytes:-}" ] || continue
 		printf '%s:%s\t%s\n' "$checksum" "$bytes" "$path" >> "$destination" || return 1
-	done < <(find "$inbox" -type f -print 2>/dev/null | LC_ALL=C sort)
+	done < <(
+		set +f
+		unset GLOBIGNORE
+		shopt -s nullglob
+		printf '%s\n' "$inbox"/*.md | LC_ALL=C sort
+	)
 }
 
 main() {
