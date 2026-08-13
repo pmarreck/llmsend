@@ -7,7 +7,7 @@ source "$root/tests/testlib"
 if [ ! -f "$root/flake.nix" ]; then
 	fail "missing reproducible flake.nix"
 else
-	for token in 'packages =' 'checks =' './test' 'inbox-awareness-hook' 'notify-session' 'block-prompt-injection-hook'; do
+	for token in 'packages =' 'checks =' './test' 'inbox-awareness-hook' 'inbox-monitor' 'notify-session' 'block-prompt-injection-hook'; do
 		if ! rg -Fq -- "$token" "$root/flake.nix"; then fail "flake contract missing [$token]"; fi
 	done
 fi
@@ -17,5 +17,28 @@ if [ ! -x "$root/build" ]; then
 elif ! rg -Fq 'nix build' "$root/build"; then
 	fail "./build does not use the reproducible Nix package"
 fi
+
+plugin="$root/.claude-plugin/plugin.json"
+marketplace="$root/.claude-plugin/marketplace.json"
+monitors="$root/monitors/monitors.json"
+if [ ! -f "$monitors" ]; then
+	fail "missing Claude monitor declaration"
+else
+	monitor_path="$(jq -r '.experimental.monitors // empty' "$plugin")"
+	assert_eq "./monitors/monitors.json" "$monitor_path" "plugin loads the inbox monitor"
+	if ! jq -e '.[] | select(.name == "llmsend-inbox" and (.command | contains("${CLAUDE_PROJECT_DIR}")))' "$monitors" >/dev/null; then
+		fail "Claude monitor does not bind to the session project directory"
+	fi
+fi
+
+plugin_version="$(jq -r '.version' "$plugin")"
+marketplace_version="$(jq -r '.plugins[] | select(.name == "llmsend") | .version' "$marketplace")"
+assert_eq "$plugin_version" "$marketplace_version" "plugin and marketplace versions agree"
+
+for stale in 'send-keys' 'kitty CSI'; do
+	if rg -Fq -- "$stale" "$plugin" "$marketplace"; then
+		fail "plugin metadata still advertises retired prompt injection [$stale]"
+	fi
+done
 
 finish_tests nix-contract

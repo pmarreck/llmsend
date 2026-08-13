@@ -15,6 +15,11 @@
             runtimeInputs = [ pkgs.coreutils pkgs.findutils pkgs.git pkgs.jq ];
             text = builtins.readFile ./skills/llmsend/scripts/inbox-awareness-hook;
           };
+          inboxMonitor = pkgs.writeShellApplication {
+            name = "llmsend-inbox-monitor";
+            runtimeInputs = [ pkgs.coreutils ];
+            text = builtins.readFile ./skills/llmsend/scripts/inbox-monitor;
+          };
           notifySession = pkgs.writeShellApplication {
             name = "llmsend-notify-session";
             runtimeInputs = [ pkgs.tmux ];
@@ -26,10 +31,10 @@
             text = builtins.readFile ./skills/llmsend/scripts/block-prompt-injection-hook;
           };
         in {
-          inherit inboxAwarenessHook notifySession blockPromptInjectionHook;
+          inherit inboxAwarenessHook inboxMonitor notifySession blockPromptInjectionHook;
           default = pkgs.symlinkJoin {
             name = "llmsend-tools";
-            paths = [ inboxAwarenessHook notifySession blockPromptInjectionHook ];
+            paths = [ inboxAwarenessHook inboxMonitor notifySession blockPromptInjectionHook ];
           };
         };
     in {

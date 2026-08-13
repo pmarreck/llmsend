@@ -1,5 +1,20 @@
 # Plan
 
+- [x] Add a Claude-native inbox monitor that wakes an idle interactive agent
+      through the application notification channel, without terminal input or
+      periodic model calls. Prove bounded direct-file classification, content
+      change detection, deduplication, and resize independence.
+  - Curiosity poke: every session needs independent in-memory state so one
+    agent observing a project cannot consume another agent's notification.
+  - Completed 2026-08-13 16:40 EDT; plugin 0.2.0 installed user-wide and all
+    repository, Nix, plugin, and skill checks pass.
+- [x] Define the Codex wake boundary: app-server-owned threads may receive
+      `turn/start` over the supported protocol, while standalone TUI writer
+      locks must fail safely instead of spawning a competing writer.
+  - Curiosity poke: project directory alone may map to several historical
+    threads, so an external sender needs an explicit live-thread identity.
+  - Completed 2026-08-13 16:40 EDT; implementation remains a separate fleet
+    launcher migration because existing standalone sessions own writer locks.
 - [x] Bound inbox-awareness discovery to direct Markdown children, prove it does
       not recursively invoke `find`, and retain content-change notifications.
       Curiosity poke: prompt hooks must not walk unrelated nested artifacts

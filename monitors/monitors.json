@@ -1,0 +1,8 @@
+[
+  {
+    "name": "llmsend-inbox",
+    "command": "\"${CLAUDE_PLUGIN_ROOT}\"/skills/llmsend/scripts/inbox-monitor \"${CLAUDE_PROJECT_DIR}\"",
+    "description": "Wake this Claude session when its durable LLMsend inbox changes",
+    "when": "always"
+  }
+]

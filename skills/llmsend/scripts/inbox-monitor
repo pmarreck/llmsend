@@ -1,0 +1,96 @@
+#!/usr/bin/env bash
+# Wake an idle Claude session when its bounded project inbox changes.
+set -u
+
+last_fingerprint=""
+
+digest_stream() {
+	local digest rest
+	if command -v sha256sum >/dev/null 2>&1; then
+		read -r digest rest <<EOF
+$(sha256sum)
+EOF
+	elif command -v shasum >/dev/null 2>&1; then
+		read -r digest rest <<EOF
+$(shasum -a 256)
+EOF
+	else
+		read -r digest rest <<EOF
+$(cksum)
+EOF
+	fi
+	printf '%s\n' "$digest"
+}
+
+digest_file() {
+	local path="$1"
+	if command -v sha256sum >/dev/null 2>&1; then
+		sha256sum -- "$path" | digest_field
+	elif command -v shasum >/dev/null 2>&1; then
+		shasum -a 256 -- "$path" | digest_field
+	else
+		cksum < "$path" | digest_field
+	fi
+}
+
+digest_field() {
+	local digest rest
+	read -r digest rest || return 1
+	printf '%s\n' "$digest"
+}
+
+pending_manifest() {
+	local inbox="$1"
+	local path relative digest
+	[ -d "$inbox" ] || return 0
+	while IFS= read -r path; do
+		relative="${path#"$inbox"/}"
+		case "$relative" in */*|.*) continue ;; esac
+		[ -f "$path" ] && [ ! -L "$path" ] || continue
+		digest="$(digest_file "$path" 2>/dev/null)" || continue
+		[ -n "$digest" ] || continue
+		printf '%s\t%s\n' "$digest" "$path"
+	done < <(
+		set +f
+		unset GLOBIGNORE
+		shopt -s nullglob
+		printf '%s\n' "$inbox"/*.md | LC_ALL=C sort
+	)
+}
+
+scan_inbox() {
+	local inbox="$1"
+	local manifest fingerprint count
+	manifest="$(pending_manifest "$inbox")"
+	fingerprint="$(printf '%s' "$manifest" | digest_stream)"
+	[ "$fingerprint" != "$last_fingerprint" ] || return 0
+	last_fingerprint="$fingerprint"
+	[ -n "$manifest" ] || return 0
+	count="$(printf '%s\n' "$manifest" | wc -l | tr -d '[:space:]')"
+	printf '📬 LLMsend inbox changed (%s pending): inspect direct Markdown notes in %s now.\n' \
+		"$count" "$inbox"
+}
+
+normalize_interval() {
+	local candidate="$1"
+	if [[ "$candidate" =~ ^([1-9][0-9]*([.][0-9]+)?|0[.][0-9]*[1-9][0-9]*)$ ]]; then
+		printf '%s\n' "$candidate"
+	else
+		printf '2\n'
+	fi
+}
+
+main() {
+	local project_root="${1:-${CLAUDE_PROJECT_DIR:-$PWD}}"
+	local interval
+	[ -d "$project_root" ] || return 0
+	interval="$(normalize_interval "${LLMSEND_MONITOR_INTERVAL_SECONDS:-2}")"
+	while :; do
+		scan_inbox "$project_root/inbox"
+		sleep "$interval" || return 0
+	done
+}
+
+if [ "${BASH_SOURCE[0]}" = "$0" ]; then
+	main "$@"
+fi

@@ -4,15 +4,14 @@
     "name": "Peter Marreck"
   },
   "metadata": {
-    "description": "Single-plugin marketplace for llmsend — inter-Claude-Code-session messaging via tmux + inbox files",
-    "homepage": "https://github.com/pmarreck/llmsend"
+    "description": "Single-plugin marketplace for durable, editor-safe inter-agent inbox messaging"
   },
   "plugins": [
     {
       "name": "llmsend",
-      "version": "0.1.0",
+      "version": "0.2.0",
       "source": "./",
-      "description": "Send messages between Claude Code sessions running related projects via inbox files plus tmux send-keys live-ping (kitty CSI u submit escape)."
+      "description": "Send durable inbox messages and wake idle Claude sessions through the application notification channel."
     }
   ]
 }

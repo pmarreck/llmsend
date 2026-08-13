@@ -1,0 +1,73 @@
+#!/usr/bin/env bash
+set -u
+
+root="$(cd "$(dirname "$0")/../.." && pwd)"
+source "$root/tests/testlib"
+
+monitor="$root/skills/llmsend/scripts/inbox-monitor"
+if [ ! -x "$monitor" ]; then
+	fail "missing executable inbox-monitor"
+	finish_tests inbox-monitor
+fi
+
+# Source the monitor so its stateful scan can be exercised without sleeps or a
+# live Claude process. Each test process represents one independent session.
+source "$monitor"
+
+assert_eq "2" "$(normalize_interval '.')" "malformed interval falls back safely"
+assert_eq "2" "$(normalize_interval '1.2.3')" "multiply-dotted interval falls back safely"
+assert_eq "2" "$(normalize_interval '0')" "zero interval cannot create a busy loop"
+assert_eq "2" "$(normalize_interval '0.0')" "zero decimal cannot create a busy loop"
+assert_eq "0.25" "$(normalize_interval '0.25')" "fractional interval is accepted"
+
+sandbox="$(mktemp -d "${TMPDIR:-/tmp}/llmsend-monitor.XXXXXX")"
+trap 'rm -rf -- "$sandbox"' EXIT
+project="$sandbox/project with spaces"
+inbox="$project/inbox"
+mkdir -p "$inbox" "$project/.git"
+output="$sandbox/output"
+
+last_fingerprint=""
+scan_inbox "$inbox" > "$output"
+assert_eq "" "$(cat "$output")" "empty inbox stays silent"
+
+note="$inbox/2026-08-13-first note.md"
+printf 'first body\n' > "$note"
+scan_inbox "$inbox" > "$output"
+notice="$(cat "$output")"
+assert_contains "$notice" "1 pending" "first note wakes the session"
+assert_contains "$notice" "$inbox" "notice identifies the authoritative inbox"
+assert_absent "$notice" "first body" "note bodies never enter monitor notifications"
+assert_eq 1 "$(wc -l < "$output" | tr -d ' ')" "one change emits one notification line"
+
+scan_inbox "$inbox" > "$output"
+assert_eq "" "$(cat "$output")" "unchanged pending set is deduplicated"
+
+printf 'revised body\n' > "$note"
+scan_inbox "$inbox" > "$output"
+assert_contains "$(cat "$output")" "1 pending" "same-name content replacement wakes the session"
+
+printf 'ignored\n' > "$inbox/.hidden.md"
+printf 'ignored\n' > "$inbox/not-markdown.txt"
+mkdir -p "$inbox/nested"
+printf 'ignored\n' > "$inbox/nested/nested.md"
+ln -s "$note" "$inbox/symlink.md"
+scan_inbox "$inbox" > "$output"
+assert_eq "" "$(cat "$output")" "only visible direct regular Markdown notes are eligible"
+
+mv "$note" "$sandbox/processed-note.md"
+scan_inbox "$inbox" > "$output"
+assert_eq "" "$(cat "$output")" "clearing the inbox updates state without a spurious wake"
+
+second="$inbox/2026-08-13-second.md"
+printf 'second body\n' > "$second"
+scan_inbox "$inbox" > "$output"
+assert_contains "$(cat "$output")" "1 pending" "a note after an empty state wakes again"
+
+last_fingerprint=""
+COLUMNS=38 LINES=8 scan_inbox "$inbox" > "$sandbox/narrow"
+last_fingerprint=""
+COLUMNS=240 LINES=80 scan_inbox "$inbox" > "$sandbox/wide"
+assert_eq "$(cat "$sandbox/narrow")" "$(cat "$sandbox/wide")" "notification is invariant under terminal resize"
+
+finish_tests inbox-monitor

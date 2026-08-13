@@ -3,10 +3,10 @@ name: llmsend
 description: >-
   Send durable messages between Claude Code or Codex sessions on one machine
   or across Tailscale. Use for cross-project handoffs, status updates, design
-  questions, fix requests, or acknowledgements. Every message is an inbox
-  file; agent-owned hooks surface pending paths through additionalContext,
-  while an optional tmux status-line notice alerts the watching human without
-  injecting terminal input.
+  questions, fix requests, acknowledgements, or waking an idle recipient.
+  Every message is an inbox file; application-owned monitors or hooks notify
+  the agent, while an optional tmux status-line notice alerts the watching
+  human without injecting terminal input.
 ---
 
 # LLMsend
@@ -25,8 +25,9 @@ Use exactly two channels:
 
 1. Write a Markdown note under the recipient project's `inbox/`. This is the
    authoritative delivery.
-2. Let `scripts/inbox-awareness-hook` expose changed pending paths through the
-   agent application's `additionalContext` hook result. Optionally call
+2. Use the agent application's own context channel. The Claude plugin's
+   `scripts/inbox-monitor` wakes an idle interactive session; hooks expose
+   changed pending paths during prompts and tool loops. Optionally call
    `scripts/notify-session` to show the watching human a tmux status message.
 
 If the hook is absent, delayed, or fails, stop at file delivery plus the safe
@@ -37,7 +38,10 @@ ping-only mode: every agent-directed message must have a durable note.
 
 - Keep one project per named tmux session; normally the session name equals the
   project directory basename.
-- Install the awareness hook for both `UserPromptSubmit` and `PostToolUse`.
+- Install the complete Claude plugin, including its always-on inbox monitor.
+  A plain skill symlink loads instructions but cannot load the monitor.
+- Install the awareness hook for both `UserPromptSubmit` and `PostToolUse` in
+  Claude and Codex.
   The first catches mail safely after a human submits; the second catches mail
   during autonomous work without waiting for another prompt.
 - For cross-machine delivery, use Tailscale plus SSH key authentication with
@@ -124,7 +128,22 @@ notice is for the human; the application hook is what informs the agent.
 Do not claim the recipient agent has read the note until it acknowledges or
 otherwise demonstrates that it consumed the file.
 
-## Recipient hook
+## Recipient awareness
+
+### Idle Claude sessions
+
+The Claude plugin declares `monitors/monitors.json`. Its session-scoped monitor
+runs `scripts/inbox-monitor` in the project root and checks only direct,
+visible, regular `inbox/*.md` files. A filename or content change emits one
+single-line notification through Claude's Monitor channel. Unchanged state and
+an empty inbox stay silent, so polling does not cause model turns.
+
+The monitor keeps its fingerprint in the process rather than a shared state
+file. Two sessions in one project therefore cannot consume each other's wake
+notification. It emits the inbox path and count, never note bodies. Restart the
+session or run `/reload-plugins` after installing or updating the plugin.
+
+### Prompt and tool hooks
 
 `scripts/inbox-awareness-hook` reads hook JSON from stdin and:
 
@@ -153,12 +172,12 @@ for replies and retain the original note path in `Re:`.
 
 ## MFIC control
 
-The independent oracle is the agent application's own hook event, not a visual
-guess produced by the sender. The hook's `additionalContext` channel bypasses
-the editor buffer entirely. The repository's `./test` command supplies the
-blocking control: it rejects prompt-injection primitives in shipped skill
-content, mechanically classifies pending-file types, verifies content-change
-deduplication, and proves identical output across distinct terminal sizes.
+The independent oracle is the agent application's monitor or hook event, not a
+visual guess produced by the sender. Both channels bypass the editor buffer.
+The repository's `./test` command supplies the blocking control: it rejects
+prompt-injection primitives in shipped skill content, mechanically classifies
+pending-file types, verifies content-change deduplication, and proves identical
+output across distinct terminal sizes.
 
 Wire `scripts/block-prompt-injection-hook` into the shell tool's `PreToolUse`
 hooks during migration. It blocks LLMsend-shaped tmux input-mutation commands
@@ -170,6 +189,18 @@ This is reasonable assurance against accidental draft corruption. An agent
 with arbitrary shell access could devise an unrecognized input-injection
 primitive, so stronger adversarial control would require denying terminal
 input mutation at the operating-system or tmux-policy boundary.
+
+## Codex idle-session boundary
+
+Codex hooks run only when a prompt or tool event already exists. They do not
+wake a standalone idle TUI. Do not start `codex exec resume` or a second app
+server against that conversation: Codex's exclusive writer lock rejects the
+second writer and can leave the intended recipient unaware.
+
+An app-server-owned Codex thread can accept an application-level `turn/start`
+request without terminal input. Until LLMsend has a tested live-thread registry
+and app-server sender, treat this as an explicit unsupported state and retain
+the durable note plus human status notice. Never fall back to `send-keys`.
 
 ## Cross-machine guardrails
 
@@ -193,6 +224,6 @@ Run:
 ./test
 ```
 
-Also run the skill validator after edits. Restart existing agent sessions after
-installing skill content or hook configuration so both the discovered skill and
-hook registry are current.
+Also run the skill and Claude plugin validators after edits. Restart existing
+agent sessions after installing skill content, monitor, or hook configuration
+so every application registry is current.
