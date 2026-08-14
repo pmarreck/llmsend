@@ -1,0 +1,84 @@
+#!/usr/bin/env bash
+set -u
+
+root="$(cd "$(dirname "$0")/../.." && pwd)"
+source "$root/tests/testlib"
+
+writer="$root/skills/llmsend/scripts/write-note"
+if [ ! -x "$writer" ]; then
+	fail "missing executable write-note"
+	finish_tests write-note
+fi
+
+sandbox="$(mktemp -d "${TMPDIR:-/tmp}/llmsend-write-note.XXXXXX")"
+trap 'rm -rf -- "$sandbox"' EXIT
+inbox="$sandbox/project with spaces/inbox"
+
+path="$(printf 'The durable body.\n' | "$writer" \
+	--inbox "$inbox" \
+	--sender 'einstein@thelio-nixos' \
+	--recipient 'validate_gui' \
+	--subject 'Pin Validate Release' \
+	--description 'Pin the verified Validate release before packaging.' \
+	--datetime '2026-08-14T14:15:16-04:00' \
+	--type request \
+	--response-expected true \
+	--priority high \
+	--tag validate \
+	--tag 'release pin' \
+	--reply-to 'inbox/prior note.frontmatter.md' 2>"$sandbox/first.err")"
+status=$?
+
+assert_eq 0 "$status" "valid note creation succeeds"
+assert_eq "$inbox/2026-08-14-from-einstein@thelio-nixos-pin-validate-release.frontmatter.md" "$path" "writer returns the deterministic note path"
+assert_eq "" "$(cat "$sandbox/first.err")" "valid note creation keeps stderr clean"
+
+contents="$(cat "$path" 2>/dev/null || true)"
+assert_eq '---json' "$(head -n 1 "$path")" "note declares JSON frontmatter unambiguously"
+frontmatter_json="$(sed -n '2,/^---$/p' "$path" | sed '$d')"
+assert_eq 'llmsend/v1' "$(printf '%s' "$frontmatter_json" | jq -r '.schema')" "note declares the schema version"
+assert_eq 'Pin Validate Release' "$(printf '%s' "$frontmatter_json" | jq -r '.subject')" "note records its subject"
+assert_eq 'Pin the verified Validate release before packaging.' "$(printf '%s' "$frontmatter_json" | jq -r '.description')" "note records a triage description"
+assert_eq 'einstein@thelio-nixos' "$(printf '%s' "$frontmatter_json" | jq -r '.sender')" "note records its routable sender"
+assert_eq 'validate_gui' "$(printf '%s' "$frontmatter_json" | jq -r '.recipient')" "note records its recipient"
+assert_eq '2026-08-14T14:15:16-04:00' "$(printf '%s' "$frontmatter_json" | jq -r '.datetime')" "note records an injected zoned datetime"
+assert_eq 'request' "$(printf '%s' "$frontmatter_json" | jq -r '.message_type')" "note records its message type"
+assert_eq 'true' "$(printf '%s' "$frontmatter_json" | jq -r '.response_expected')" "note records response expectation as a boolean"
+assert_eq 'high' "$(printf '%s' "$frontmatter_json" | jq -r '.priority')" "note records advisory priority"
+assert_eq $'release pin\nvalidate' "$(printf '%s' "$frontmatter_json" | jq -r '.tags[]' | LC_ALL=C sort)" "note records tags as a complete set"
+assert_eq 'inbox/prior note.frontmatter.md' "$(printf '%s' "$frontmatter_json" | jq -r '.reply_to')" "note records reply lineage"
+assert_contains "$contents" $'}\n---\n\n# Pin Validate Release\n\nThe durable body.' "frontmatter is followed by readable Markdown"
+
+second_path="$(printf 'Second body.\n' | "$writer" \
+	--inbox "$inbox" --sender 'einstein@thelio-nixos' --recipient validate_gui \
+	--subject 'Pin Validate Release' --description 'A concurrent follow-up.' \
+	--datetime '2026-08-14T14:15:16-04:00' --type status \
+	--response-expected false --priority normal --tag validate 2>"$sandbox/second.err")"
+assert_eq "$inbox/2026-08-14-from-einstein@thelio-nixos-pin-validate-release-2.frontmatter.md" "$second_path" "collision suffix preserves both notes"
+assert_contains "$(cat "$path")" 'The durable body.' "collision handling never overwrites the first note"
+
+before_count="$(find "$inbox" -maxdepth 1 -type f -name '*.frontmatter.md' | wc -l | tr -d ' ')"
+printf 'Rejected body.\n' | "$writer" \
+	--inbox "$inbox" --sender sender --recipient recipient --subject subject \
+	--description description --datetime '2026-08-14T14:15:16-04:00' \
+	--type request --response-expected true --priority catastrophic --tag test \
+	>"$sandbox/invalid.out" 2>"$sandbox/invalid.err"
+assert_eq 2 "$?" "unknown priority is rejected"
+assert_contains "$(cat "$sandbox/invalid.err")" 'invalid priority' "priority failure is actionable"
+after_count="$(find "$inbox" -maxdepth 1 -type f -name '*.frontmatter.md' | wc -l | tr -d ' ')"
+assert_eq "$before_count" "$after_count" "invalid metadata creates no note"
+
+printf 'Rejected body.\n' | "$writer" \
+	--inbox "$inbox" --sender sender --recipient recipient --subject $'line one\nline two' \
+	--description description --datetime '2026-08-14T14:15:16-04:00' \
+	--type request --response-expected true --priority normal --tag test \
+	>"$sandbox/newline.out" 2>"$sandbox/newline.err"
+assert_eq 2 "$?" "multiline scalar metadata is rejected"
+assert_contains "$(cat "$sandbox/newline.err")" 'single line' "multiline failure explains the contract"
+
+"$writer" --help >"$sandbox/help.out" 2>"$sandbox/help.err"
+assert_eq 0 "$?" "help succeeds"
+assert_contains "$(cat "$sandbox/help.out")" 'Usage:' "help documents the command"
+assert_eq "" "$(cat "$sandbox/help.err")" "help keeps stderr clean"
+
+finish_tests write-note

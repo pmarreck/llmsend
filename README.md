@@ -7,7 +7,9 @@ sessions on one machine or across Tailscale.
 
 ## Architecture
 
-Every message is a Markdown file under the recipient project's `inbox/`.
+Every new message is a schema-versioned `*.frontmatter.md` file under the
+recipient project's `inbox/`. Legacy Markdown notes remain discoverable during
+migration.
 Claude's session-scoped plugin monitor wakes an idle interactive agent when its
 bounded inbox changes. `UserPromptSubmit` and `PostToolUse` hooks surface
 pending paths during existing turns; an optional tmux status-line message
@@ -25,6 +27,8 @@ The implementation lives in `skills/llmsend/`:
   notification channel.
 - `scripts/inbox-awareness-hook` supplies editor-independent agent context.
 - `scripts/notify-session` emits only a human-visible tmux status message.
+- `scripts/write-note` writes atomic, collision-safe `llmsend/v1` notes from
+  stdin with relevance metadata for body-free triage.
 - `./test` enforces the no-prompt-injection boundary and hook behavior.
 
 ## Install
@@ -64,6 +68,7 @@ ln -f "$HOME/Code/llmsend/skills/llmsend/scripts/inbox-awareness-hook" "$HOME/.c
 ln -f "$HOME/Code/llmsend/skills/llmsend/scripts/inbox-monitor" "$HOME/.codex/skills/llmsend/scripts/inbox-monitor"
 ln -f "$HOME/Code/llmsend/skills/llmsend/scripts/block-prompt-injection-hook" "$HOME/.codex/skills/llmsend/scripts/block-prompt-injection-hook"
 ln -f "$HOME/Code/llmsend/skills/llmsend/scripts/notify-session" "$HOME/.codex/skills/llmsend/scripts/notify-session"
+ln -f "$HOME/Code/llmsend/skills/llmsend/scripts/write-note" "$HOME/.codex/skills/llmsend/scripts/write-note"
 ```
 
 Wire `inbox-awareness-hook` into both `UserPromptSubmit` and `PostToolUse` for

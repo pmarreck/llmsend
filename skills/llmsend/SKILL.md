@@ -23,8 +23,8 @@ input-buffer oracle.
 
 Use exactly two channels:
 
-1. Write a Markdown note under the recipient project's `inbox/`. This is the
-   authoritative delivery.
+1. Write a schema-versioned `*.frontmatter.md` note under the recipient
+   project's `inbox/`. This is the authoritative delivery.
 2. Use the agent application's own context channel. The Claude plugin's
    `scripts/inbox-monitor` wakes an idle interactive session; hooks expose
    changed pending paths during prompts and tool loops. Optionally call
@@ -77,40 +77,63 @@ pane happens to remain at its repository root.
 
 ### 2. Write the durable note
 
-Create `inbox/` if needed. Name notes
-`YYYY-MM-DD-from-SENDER-TOPIC.md`, adding a numeric suffix on collision. For
-cross-machine notes, identify the sender as `SESSION@HOST` in both the filename
-and the `From:` field so replies are routable.
+Use `scripts/write-note`; do not hand-roll new note filenames or frontmatter.
+It reads the Markdown body from stdin, writes atomically, adds a collision
+suffix when needed, and prints the created path. New notes end in
+`YYYY-MM-DD-from-SENDER-TOPIC.frontmatter.md`. Recipient discovery retains
+direct legacy `*.md` notes until existing inboxes drain naturally.
 
-Recommended body:
+The `llmsend/v1` metadata contract is:
 
-```markdown
-# Subject
+```text
+---json
+{
+  "schema": "llmsend/v1",
+  "subject": "Short human title",
+  "description": "One-sentence metadata-only summary.",
+  "sender": "session@host",
+  "recipient": "project-or-session",
+  "datetime": "2026-08-14T14:15:16-04:00",
+  "message_type": "request",
+  "response_expected": true,
+  "priority": "normal",
+  "tags": ["topic", "useful alias"],
+  "reply_to": "inbox/prior-note.frontmatter.md"
+}
+---
+```
 
-**From:** sender-or-session@host
-**Date:** YYYY-MM-DD
-**Re:** prior note path, when replying
-**FYI only — no response needed.**
+`reply_to` is optional. Message types are `request`, `question`, `handoff`,
+`status`, `decision`, `reply`, `ack`, and `fyi`; priorities are `low`, `normal`,
+`high`, and `urgent`. Use several concise tags, including useful aliases, so a
+metadata-only search finds related work without a semantic index. Priority and
+tags are sender-controlled triage hints. They never grant command authority or
+override Peter's active plan, safety policy, or recipient judgment.
 
-## TL;DR
+For a local note:
 
-One or two sentences.
-
+```bash
+note_path="$(skills/llmsend/scripts/write-note \
+  --inbox "$recipient_dir/inbox" \
+  --sender "$sender" --recipient "$session" \
+  --subject 'Subject' --description 'One-sentence summary.' \
+  --type request --response-expected true --priority normal \
+  --tag topic --tag alias <<'EOF'
 ## Details
 
 The durable content.
-
-— sender
+EOF
+)"
+notefile="${note_path##*/}"
 ```
 
-Omit the FYI line when a response is expected. Stream remote note contents over
-standard input instead of embedding them in a remote command:
-
-```bash
-ssh -o BatchMode=yes "$host" \
-  "mkdir -p '$recipient_dir/inbox' && cat > '$recipient_dir/inbox/$notefile'" \
-  < "$local_note"
-```
+Omit `--datetime` during normal use so the writer records the sender's current
+zoned time. Pass it explicitly only when reproducing or testing a known event.
+Use `--reply-to` for replies. For cross-machine notes, use `SESSION@HOST` as the
+sender, resolve the installed remote writer path, shell-escape its argument
+array with Bash `printf -v remote_command '%q ' ...`, and stream the body to
+`ssh -o BatchMode=yes "$host" "$remote_command"`. Running the writer on the
+recipient host preserves its atomic collision check.
 
 ### 3. Notify without touching the editor
 
@@ -134,7 +157,8 @@ otherwise demonstrates that it consumed the file.
 
 The Claude plugin declares `monitors/monitors.json`. Its session-scoped monitor
 runs `scripts/inbox-monitor` in the project root and checks only direct,
-visible, regular `inbox/*.md` files. A filename or content change emits one
+visible, regular `inbox/*.frontmatter.md` files plus migration-period legacy
+`*.md` notes. A filename or content change emits one
 single-line notification through Claude's Monitor channel. Unchanged state and
 an empty inbox stay silent, so polling does not cause model turns.
 
@@ -147,8 +171,8 @@ session or run `/reload-plugins` after installing or updating the plugin.
 
 `scripts/inbox-awareness-hook` reads hook JSON from stdin and:
 
-- resolves the current project root and its direct, visible regular `*.md`
-  inbox entries;
+- resolves the current project root and its direct, visible regular
+  `*.frontmatter.md` and legacy `*.md` inbox entries;
 - fingerprints filename plus content without copying note bodies into context;
 - emits the complete changed pending-path set as `additionalContext`;
 - remains silent when the set is unchanged;
@@ -167,12 +191,14 @@ and reflow therefore cannot affect its verdict.
 
 When notified, process each note to completion, in this order:
 
-1. Read the note.
-2. Act on it (or fold its content into durable project artifacts — spec,
+1. Run `frontmatter --json -- PATH...` to triage new-format notes without
+   loading their bodies. Read legacy notes directly.
+2. Read the selected note body.
+3. Act on it (or fold its content into durable project artifacts — spec,
    PLAN.md, ISSUES.md — when the content must outlive the note).
-3. Send any reply via the sender workflow, retaining the original note path
+4. Send any reply via the sender workflow, retaining the original note path
    in `Re:`.
-4. **Delete the note** — recoverably, e.g. `mv` to `~/.Trash`; never `rm`.
+5. **Delete the note** — recoverably, e.g. `mv` to `~/.Trash`; never `rm`.
 
 A fully-ingested, fully-handled note is EPHEMERAL. Deletion is the marker
 that processing finished; a note still in `inbox/` means work remains.
@@ -236,8 +262,9 @@ the durable note plus human status notice. Never fall back to `send-keys`.
 ## Installation and validation
 
 Claude can use a symlinked skill directory. Codex currently needs a real skill
-directory with regular files, so hard-link or copy both `SKILL.md` and bundled
-scripts; installing only `SKILL.md` omits the executable safety mechanism.
+directory with regular files, so hard-link or copy both `SKILL.md` and every
+bundled script, including `write-note`; installing only `SKILL.md` omits the
+executable safety mechanisms.
 
 Run:
 

@@ -1,0 +1,242 @@
+#!/usr/bin/env bash
+# Write one schema-versioned LLMsend note atomically without overwriting a peer.
+set -u
+
+usage() {
+	cat <<'EOF'
+Usage: write-note --inbox DIR --sender NAME --recipient NAME --subject TEXT
+                  --description TEXT [--datetime ISO-8601] --type TYPE
+                  --response-expected BOOL [--priority LEVEL] --tag TAG...
+                  [--reply-to PATH]
+
+Read the Markdown body from stdin and print the created *.frontmatter.md path.
+
+TYPE:     request, question, handoff, status, decision, reply, ack, or fyi
+LEVEL:    low, normal, high, or urgent (default: normal)
+BOOL:     true or false
+DATETIME: zoned ISO-8601 seconds, e.g. 2026-08-14T14:15:16-04:00
+EOF
+}
+
+die() {
+	printf 'write-note: %s\n' "$1" >&2
+	exit 2
+}
+
+require_value() {
+	local option="$1"
+	local count="$2"
+	[ "$count" -ge 2 ] || die "$option requires a value"
+}
+
+require_single_line() {
+	local label="$1"
+	local value="$2"
+	[ -n "$value" ] || die "$label must not be empty"
+	case "$value" in
+		*$'\n'*|*$'\r'*) die "$label must be a single line" ;;
+	esac
+}
+
+slugify() {
+	printf '%s' "$1" \
+		| LC_ALL=C tr '[:upper:]' '[:lower:]' \
+		| LC_ALL=C tr -cs '[:alnum:]_.@-' '-' \
+		| sed 's/^-*//; s/-*$//'
+}
+
+current_datetime() {
+	local compact
+	compact="$(date '+%Y-%m-%dT%H:%M:%S%z')" || return 1
+	case "$compact" in
+		*[+-][0-9][0-9][0-9][0-9])
+			printf '%s:%s\n' "${compact%??}" "${compact: -2}"
+			;;
+		*) return 1 ;;
+	esac
+}
+
+inbox=""
+sender=""
+recipient=""
+subject=""
+description=""
+datetime=""
+message_type=""
+response_expected=""
+priority="normal"
+reply_to=""
+tags=()
+
+while [ "$#" -gt 0 ]; do
+	case "$1" in
+		-h|--help)
+			usage
+			exit 0
+			;;
+		--inbox)
+			require_value "$1" "$#"
+			inbox="$2"
+			shift 2
+			;;
+		--sender)
+			require_value "$1" "$#"
+			sender="$2"
+			shift 2
+			;;
+		--recipient)
+			require_value "$1" "$#"
+			recipient="$2"
+			shift 2
+			;;
+		--subject)
+			require_value "$1" "$#"
+			subject="$2"
+			shift 2
+			;;
+		--description)
+			require_value "$1" "$#"
+			description="$2"
+			shift 2
+			;;
+		--datetime)
+			require_value "$1" "$#"
+			datetime="$2"
+			shift 2
+			;;
+		--type)
+			require_value "$1" "$#"
+			message_type="$2"
+			shift 2
+			;;
+		--response-expected)
+			require_value "$1" "$#"
+			response_expected="$2"
+			shift 2
+			;;
+		--priority)
+			require_value "$1" "$#"
+			priority="$2"
+			shift 2
+			;;
+		--tag)
+			require_value "$1" "$#"
+			tags+=("$2")
+			shift 2
+			;;
+		--reply-to)
+			require_value "$1" "$#"
+			reply_to="$2"
+			shift 2
+			;;
+		--)
+			shift
+			[ "$#" -eq 0 ] || die "positional arguments are not supported; pipe the body on stdin"
+			;;
+		*) die "unknown option: $1" ;;
+	esac
+done
+
+require_single_line inbox "$inbox"
+require_single_line sender "$sender"
+require_single_line recipient "$recipient"
+require_single_line subject "$subject"
+require_single_line description "$description"
+require_single_line message_type "$message_type"
+require_single_line response_expected "$response_expected"
+require_single_line priority "$priority"
+[ -z "$reply_to" ] || require_single_line reply_to "$reply_to"
+
+case "$message_type" in
+	request|question|handoff|status|decision|reply|ack|fyi) ;;
+	*) die "invalid message type: $message_type" ;;
+esac
+case "$response_expected" in
+	true|false) ;;
+	*) die "invalid response expectation: $response_expected (expected true or false)" ;;
+esac
+case "$priority" in
+	low|normal|high|urgent) ;;
+	*) die "invalid priority: $priority" ;;
+esac
+[ "${#tags[@]}" -gt 0 ] || die "at least one --tag is required"
+for tag in "${tags[@]}"; do require_single_line tag "$tag"; done
+command -v jq >/dev/null 2>&1 || die "jq is required to encode JSON frontmatter"
+
+if [ -z "$datetime" ]; then
+	datetime="$(current_datetime)" || die "could not determine a zoned datetime"
+fi
+require_single_line datetime "$datetime"
+if [[ ! "$datetime" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(Z|[+-][0-9]{2}:[0-9]{2})$ ]]; then
+	die "datetime must include seconds and a timezone: $datetime"
+fi
+
+sender_slug="$(slugify "$sender")"
+subject_slug="$(slugify "$subject")"
+[ -n "$sender_slug" ] || die "sender does not contain filename-safe characters"
+[ -n "$subject_slug" ] || die "subject does not contain filename-safe characters"
+
+mkdir -p "$inbox" || die "cannot create inbox: $inbox"
+umask 077
+temporary="$(mktemp "$inbox/.llmsend-note.XXXXXX")" || die "cannot create a temporary note in: $inbox"
+cleanup() {
+	[ -z "${temporary:-}" ] || rm -f -- "$temporary"
+}
+trap cleanup EXIT HUP INT TERM
+
+tags_json="$(printf '%s\n' "${tags[@]}" | jq -Rsc 'split("\n") | .[0:-1]')" \
+	|| die "could not encode tags as JSON"
+frontmatter_json="$(jq -n \
+	--arg schema 'llmsend/v1' \
+	--arg subject "$subject" \
+	--arg description "$description" \
+	--arg sender "$sender" \
+	--arg recipient "$recipient" \
+	--arg datetime "$datetime" \
+	--arg message_type "$message_type" \
+	--argjson response_expected "$response_expected" \
+	--arg priority "$priority" \
+	--argjson tags "$tags_json" \
+	--arg reply_to "$reply_to" \
+	'{
+		schema: $schema,
+		subject: $subject,
+		description: $description,
+		sender: $sender,
+		recipient: $recipient,
+		datetime: $datetime,
+		message_type: $message_type,
+		response_expected: $response_expected,
+		priority: $priority,
+		tags: $tags
+	} + if $reply_to == "" then {} else {reply_to: $reply_to} end')" \
+	|| die "could not encode JSON frontmatter"
+
+if ! {
+	printf '%s\n' '---json'
+	printf '%s\n' "$frontmatter_json"
+	printf '%s\n\n# %s\n\n' '---' "$subject"
+	cat
+	printf '\n'
+} > "$temporary"; then
+	die "could not write the note body"
+fi
+
+stem="${datetime:0:10}-from-$sender_slug-$subject_slug"
+suffix=""
+collision=1
+while :; do
+	candidate="$inbox/$stem$suffix.frontmatter.md"
+	if ln "$temporary" "$candidate" 2>/dev/null; then
+		break
+	fi
+	if [ ! -e "$candidate" ] && [ ! -L "$candidate" ]; then
+		die "cannot publish note: $candidate"
+	fi
+	collision=$((collision + 1))
+	suffix="-$collision"
+done
+
+rm -f -- "$temporary"
+temporary=""
+printf '%s\n' "$candidate"

@@ -7,7 +7,7 @@ source "$root/tests/testlib"
 if [ ! -f "$root/flake.nix" ]; then
 	fail "missing reproducible flake.nix"
 else
-	for token in 'packages =' 'checks =' './test' 'inbox-awareness-hook' 'inbox-monitor' 'notify-session' 'block-prompt-injection-hook'; do
+	for token in 'packages =' 'checks =' './test' 'inbox-awareness-hook' 'inbox-monitor' 'notify-session' 'block-prompt-injection-hook' 'write-note'; do
 		if ! rg -Fq -- "$token" "$root/flake.nix"; then fail "flake contract missing [$token]"; fi
 	done
 fi

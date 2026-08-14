@@ -1,6 +1,6 @@
 {
   "name": "llmsend",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Durable inter-agent inbox messaging with application-owned wake notifications that never modify terminal input.",
   "author": {
     "name": "Peter Marreck"

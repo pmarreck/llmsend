@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+set -u
+
+root="$(cd "$(dirname "$0")/../.." && pwd)"
+source "$root/tests/testlib"
+
+skill="$root/skills/llmsend/SKILL.md"
+readme="$root/README.md"
+
+for token in \
+	'*.frontmatter.md' \
+	'---json' \
+	'"schema": "llmsend/v1"' \
+	'"subject":' \
+	'"description":' \
+	'"sender":' \
+	'"recipient":' \
+	'"datetime":' \
+	'"message_type":' \
+	'"response_expected":' \
+	'"priority":' \
+	'"tags":'
+do
+	if ! rg -Fq -- "$token" "$skill"; then
+		fail "skill frontmatter contract missing [$token]"
+	fi
+done
+
+if ! rg -Fq 'write-note' "$skill" "$readme"; then
+	fail "sender documentation does not use the deterministic note writer"
+fi
+if ! rg -Fq 'legacy `*.md`' "$skill"; then
+	fail "migration contract does not preserve discovery of legacy Markdown notes"
+fi
+if ! rg -Fq 'triage hints' "$skill"; then
+	fail "skill does not constrain sender-controlled triage metadata"
+fi
+if rg -qi 'yaml|lyaml' "$skill" "$readme" "$root/skills/llmsend/scripts/write-note"; then
+	fail "new note contract must not depend on YAML"
+fi
+
+finish_tests frontmatter-contract

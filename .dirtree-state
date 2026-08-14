@@ -11,6 +11,9 @@ annotate=[
 	skills/llmsend/scripts/inbox-awareness-hook = Agent-owned hook that reports changed pending inbox paths without touching the editor buffer.
 	skills/llmsend/scripts/inbox-monitor = Session-scoped bounded inbox watcher that emits deduplicated Claude notifications without terminal input.
 	skills/llmsend/scripts/notify-session = Human-only tmux status notification with no pane input mutation.
+	skills/llmsend/scripts/write-note = Atomically writes collision-safe llmsend/v1 JSON-frontmatter notes from stdin.
 	test = Runs the complete deterministic unit and integration suite.
+	tests/integration/frontmatter_contract_test = Enforces the JSON-frontmatter sender, documentation, migration, and no-YAML contract.
 	tests/unit/inbox_monitor_test = Deterministic monitor classifier, change-detection, deduplication, and resize-invariance tests.
+	tests/unit/write_note_test = Covers JSON schema output, atomic collision suffixes, validation, and help behavior.
 ]

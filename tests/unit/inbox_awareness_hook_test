@@ -29,7 +29,7 @@ run_hook() {
 out="$(run_hook "$sandbox/state")"
 assert_eq "" "$out" "empty inbox stays silent"
 
-note_one="$inbox/2026-07-22-first message.md"
+note_one="$inbox/2026-07-22-first-message.frontmatter.md"
 printf 'secret body must not enter hook context\n' > "$note_one"
 out="$(run_hook "$sandbox/state")"
 assert_contains "$out" '"hookEventName":"UserPromptSubmit"' "hook preserves the application event"
@@ -71,7 +71,7 @@ printf 'second\n' > "$note_two"
 out="$(run_hook "$sandbox/state")"
 context="$(printf '%s' "$out" | jq -r '.hookSpecificOutput.additionalContext')"
 assert_contains "$context" "$note_one" "changed set reports every still-pending note"
-assert_contains "$context" "$note_two" "changed set reports the newly pending note"
+assert_contains "$context" "$note_two" "changed set reports a newly pending legacy note"
 
 printf 'second, revised\n' > "$note_two"
 out="$(run_hook "$sandbox/state")"

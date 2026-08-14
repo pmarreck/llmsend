@@ -31,7 +31,7 @@ last_fingerprint=""
 scan_inbox "$inbox" > "$output"
 assert_eq "" "$(cat "$output")" "empty inbox stays silent"
 
-note="$inbox/2026-08-13-first note.md"
+note="$inbox/2026-08-13-first-note.frontmatter.md"
 printf 'first body\n' > "$note"
 scan_inbox "$inbox" > "$output"
 notice="$(cat "$output")"
@@ -62,7 +62,7 @@ assert_eq "" "$(cat "$output")" "clearing the inbox updates state without a spur
 second="$inbox/2026-08-13-second.md"
 printf 'second body\n' > "$second"
 scan_inbox "$inbox" > "$output"
-assert_contains "$(cat "$output")" "1 pending" "a note after an empty state wakes again"
+assert_contains "$(cat "$output")" "1 pending" "a legacy note after an empty state remains discoverable"
 
 last_fingerprint=""
 COLUMNS=38 LINES=8 scan_inbox "$inbox" > "$sandbox/narrow"

@@ -30,11 +30,16 @@
             runtimeInputs = [ pkgs.coreutils pkgs.gnugrep pkgs.jq ];
             text = builtins.readFile ./skills/llmsend/scripts/block-prompt-injection-hook;
           };
+          writeNote = pkgs.writeShellApplication {
+            name = "llmsend-write-note";
+            runtimeInputs = [ pkgs.coreutils pkgs.gnused pkgs.jq ];
+            text = builtins.readFile ./skills/llmsend/scripts/write-note;
+          };
         in {
-          inherit inboxAwarenessHook inboxMonitor notifySession blockPromptInjectionHook;
+          inherit inboxAwarenessHook inboxMonitor notifySession blockPromptInjectionHook writeNote;
           default = pkgs.symlinkJoin {
             name = "llmsend-tools";
-            paths = [ inboxAwarenessHook inboxMonitor notifySession blockPromptInjectionHook ];
+            paths = [ inboxAwarenessHook inboxMonitor notifySession blockPromptInjectionHook writeNote ];
           };
         };
     in {
@@ -48,7 +53,7 @@
             pname = "llmsend-tests";
             version = "0.1.0";
             src = ./.;
-            nativeBuildInputs = [ pkgs.bash pkgs.coreutils pkgs.findutils pkgs.git pkgs.jq pkgs.ripgrep ];
+            nativeBuildInputs = [ pkgs.bash pkgs.coreutils pkgs.findutils pkgs.git pkgs.gnused pkgs.jq pkgs.ripgrep ];
             buildPhase = ''
               runHook preBuild
               cp -R "$src" work
@@ -67,7 +72,7 @@
 
       devShells = forAllSystems (pkgs: {
         default = pkgs.mkShell {
-          packages = [ pkgs.bash pkgs.coreutils pkgs.findutils pkgs.git pkgs.jq pkgs.ripgrep pkgs.tmux ];
+          packages = [ pkgs.bash pkgs.coreutils pkgs.findutils pkgs.git pkgs.gnused pkgs.jq pkgs.ripgrep pkgs.tmux ];
         };
       });
     };

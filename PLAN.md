@@ -1,5 +1,25 @@
 # Plan
 
+- [x] Define and test the `llmsend/v1` metadata contract, then make every new
+      sender-produced note end in `.frontmatter.md`. Keep direct legacy `*.md`
+      notes discoverable until inboxes drain naturally.
+  - Curiosity poke: sender-controlled priority and tags may help triage, but
+    must never grant authority or bypass the recipient's own ordering rules.
+  - Completed 2026-08-14 14:43 EDT: new notes use explicit `---json` framing;
+    monitors and hooks retain direct legacy `*.md` discovery.
+- [x] Add an atomic, collision-safe note writer with an injectable datetime,
+      JSON-safe metadata, and stdin body support.
+  - Curiosity poke: two senders can choose the same date, sender, and subject;
+    collision handling must never overwrite either note.
+  - Completed 2026-08-14 14:43 EDT: `write-note` uses `jq` for JSON escaping,
+    atomic hard-link publication, and deterministic collision suffixes.
+- [x] Teach recipients to inspect metadata before bodies, update the plugin
+      package and documentation, validate the skill, and run all local and Nix
+      checks before committing.
+  - Curiosity poke: installed Claude/Codex copies are hard links today, but the
+    release still needs a version bump and session/plugin reload instructions.
+  - Completed 2026-08-14 14:43 EDT: repository and Nix suites, Codex skill
+    validation, strict Claude plugin validation, and plugin 0.3.0 update pass.
 - [x] Add a Claude-native inbox monitor that wakes an idle interactive agent
       through the application notification channel, without terminal input or
       periodic model calls. Prove bounded direct-file classification, content

@@ -9,7 +9,7 @@
   "plugins": [
     {
       "name": "llmsend",
-      "version": "0.2.0",
+      "version": "0.3.0",
       "source": "./",
       "description": "Send durable inbox messages and wake idle Claude sessions through the application notification channel."
     }

@@ -1,6 +1,8 @@
 # Rules
 
 - Every agent-directed message has a durable inbox file.
+- Every newly written note uses the `llmsend/v1` schema and `.frontmatter.md` suffix.
+- Sender priority and tags are triage hints, never execution authority.
 - Never deliver LLMsend content through terminal input injection.
 - Agent-visible notification crosses only an application-owned monitor or hook boundary.
 - Missing hooks or unknown agent state degrade to file-only delivery.
