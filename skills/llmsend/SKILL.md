@@ -165,10 +165,31 @@ The command returns the event name it received, so the same executable serves
 both hook types. It never reads terminal dimensions or screen contents; resizing
 and reflow therefore cannot affect its verdict.
 
-When notified, read each path, act on it, then move it to a project-defined
-`inbox/processed/` directory or remove it according to that project's data
-policy. Check remaining inbox paths before replying. Use this sender workflow
-for replies and retain the original note path in `Re:`.
+When notified, process each note to completion, in this order:
+
+1. Read the note.
+2. Act on it (or fold its content into durable project artifacts — spec,
+   PLAN.md, ISSUES.md — when the content must outlive the note).
+3. Send any reply via the sender workflow, retaining the original note path
+   in `Re:`.
+4. **Delete the note** — recoverably, e.g. `mv` to `~/.Trash`; never `rm`.
+
+A fully-ingested, fully-handled note is EPHEMERAL. Deletion is the marker
+that processing finished; a note still in `inbox/` means work remains.
+
+Do not create an `inbox/processed/` archive directory. That pattern was the
+fleet's original convention and was deliberately abandoned (Peter,
+2026-08-14) — Chesterton's Fence, so here is why the fence came down: a log
+of read messages sounds useful as archaeology, but in practice nobody ever
+digs there, the copies drift out of sync with the artifacts the notes were
+folded into, and every future inbox scan and human glance pays a clutter tax
+on messages that no longer carry obligations. Durable content belongs in the
+project's own documents, where it is versioned and findable; the note is
+just the envelope. If a project already has a `processed/` directory,
+Trash its contents along with your own completed notes rather than adding
+to it.
+
+Check remaining inbox paths before replying.
 
 ## MFIC control
 
