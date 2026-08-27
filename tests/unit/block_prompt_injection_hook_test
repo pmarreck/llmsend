@@ -12,10 +12,14 @@ fi
 
 run_guard() {
 	local command="$1"
-	printf '%s' "$(jq -cn --arg command "$command" '{hook_event_name:"PreToolUse",tool_input:{command:$command}}')" | "$guard" >/dev/null 2>&1
+	guard_output="$(
+		printf '%s' "$(jq -cn --arg command "$command" '{hook_event_name:"PreToolUse",tool_input:{command:$command}}')" |
+			"$guard" 2>&1
+	)"
+	guard_status=$?
 }
 
-blocked=(
+warned=(
 	"tmux send-keys -t validate -l '📬 New inbox message from dirtree'"
 	"msg='New inbox message'; tmux paste-buffer -t validate"
 	"ssh host \"tmux load-buffer -b llmsend-ping-1 -\""
@@ -31,14 +35,16 @@ allowed=(
 	"echo llmsend"
 )
 
-for command in "${blocked[@]}"; do
+for command in "${warned[@]}"; do
 	run_guard "$command"
-	assert_eq 2 "$?" "LLMsend-shaped terminal injection is blocked [$command]"
+	assert_eq 0 "$guard_status" "LLMsend-shaped terminal injection remains advisory [$command]"
+	assert_contains "$guard_output" "ADVISORY" "risky terminal injection emits an advisory [$command]"
 done
 
 for command in "${allowed[@]}"; do
 	run_guard "$command"
-	assert_eq 0 "$?" "non-injecting or non-LLMsend tmux command remains allowed [$command]"
+	assert_eq 0 "$guard_status" "non-injecting or non-LLMsend tmux command remains allowed [$command]"
+	assert_eq "" "$guard_output" "safe command does not emit the terminal-input advisory [$command]"
 done
 
 printf '{}' | "$guard" >/dev/null 2>&1

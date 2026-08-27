@@ -6,7 +6,7 @@ description: >-
   questions, fix requests, acknowledgements, or waking an idle recipient.
   Every message is an inbox file; application-owned monitors or hooks notify
   the agent, while an optional tmux status-line notice alerts the watching
-  human without injecting terminal input.
+  human. An explicitly authorized empty-prompt wake is an advisory fallback.
 ---
 
 # LLMsend
@@ -14,12 +14,10 @@ description: >-
 Coordinate project-named Claude Code and Codex sessions through a durable inbox
 and an editor-independent hook channel.
 
-## Safety invariant
+## Delivery invariant
 
-Never write bytes into another agent pane's terminal input stream. A screen can
-look idle and still race with a human keystroke; cursor position, wrapping,
-ANSI intensity, ghost suggestions, and terminal geometry are not an atomic
-input-buffer oracle.
+Write the durable note before attempting any notification or wake. The note is
+the authoritative message; every other channel is a hint that it exists.
 
 Use exactly two channels:
 
@@ -30,9 +28,14 @@ Use exactly two channels:
    changed pending paths during prompts and tool loops. Optionally call
    `scripts/notify-session` to show the watching human a tmux status message.
 
-If the hook is absent, delayed, or fails, stop at file delivery plus the safe
-status-line notice. Never fall back to terminal input injection. There is no
-ping-only mode: every agent-directed message must have a durable note.
+Application-owned channels are preferred. If the hook is absent, delayed, or
+fails, an explicitly authorized sender may wake an idle agent through terminal
+input only after inspecting the target pane and finding a demonstrably empty
+agent prompt. This is an advisory safety check. A screen can look idle and
+still race with a human keystroke; cursor position, wrapping, ANSI intensity,
+ghost suggestions, and terminal geometry are not an atomic input-buffer
+oracle. Stop when the pane is ambiguous. There is no ping-only mode: every
+agent-directed message must have a durable note.
 
 ## Prerequisites
 
@@ -135,7 +138,7 @@ array with Bash `printf -v remote_command '%q ' ...`, and stream the body to
 `ssh -o BatchMode=yes "$host" "$remote_command"`. Running the writer on the
 recipient host preserves its atomic collision check.
 
-### 3. Notify without touching the editor
+### 3. Notify or wake
 
 For a local recipient:
 
@@ -150,6 +153,26 @@ notice is for the human; the application hook is what informs the agent.
 
 Do not claim the recipient agent has read the note until it acknowledges or
 otherwise demonstrates that it consumed the file.
+
+### Authorized terminal wake fallback
+
+Use this only when the owner has explicitly authorized terminal wakes in the
+current scope or a discoverable local policy records that authorization.
+
+1. Write the durable note and send the status-line notice first.
+2. Capture enough of the target pane to identify the agent application and its
+   current prompt. Continue only when the prompt is visibly empty, with no
+   draft, dialog, selection, shell command, or other ambiguous state.
+3. Reinspect immediately before input if any intervening work occurred.
+4. Enter only a short pointer to the durable note, then submit it using the
+   recipient application's known input convention. Never inject the note body,
+   credentials, or shell fragments.
+5. Treat the wake as unconfirmed until the recipient acknowledges the note.
+
+The `scripts/block-prompt-injection-hook` compatibility name is historical. It
+now emits an `ADVISORY` for LLMsend-shaped input mutation and returns success.
+The warning keeps the human-draft race visible without vetoing an authorized
+wake.
 
 ## Recipient awareness
 
@@ -219,18 +242,17 @@ Check remaining inbox paths before replying.
 
 ## MFIC control
 
-The independent oracle is the agent application's monitor or hook event, not a
-visual guess produced by the sender. Both channels bypass the editor buffer.
-The repository's `./test` command supplies the blocking control: it rejects
-prompt-injection primitives in shipped skill content, mechanically classifies
-pending-file types, verifies content-change deduplication, and proves identical
-output across distinct terminal sizes.
+The agent application's monitor or hook event is the strongest wake oracle
+because it bypasses the editor buffer. Terminal inspection is weaker and
+remains a consciously accepted race. The repository's `./test` command
+mechanically classifies pending-file types, verifies content-change
+deduplication, proves identical output across distinct terminal sizes, and
+checks that risky terminal commands warn without being blocked.
 
 Wire `scripts/block-prompt-injection-hook` into the shell tool's `PreToolUse`
-hooks during migration. It blocks LLMsend-shaped tmux input-mutation commands
-while allowing ordinary tmux automation such as answering a trust prompt.
-This independent enforcement layer catches stale sessions that still remember
-the old delivery protocol.
+hooks during migration. It emits an advisory for LLMsend-shaped tmux
+input-mutation commands while allowing them to proceed. Ordinary tmux
+automation remains silent.
 
 This is reasonable assurance against accidental draft corruption. An agent
 with arbitrary shell access could devise an unrecognized input-injection
@@ -246,8 +268,9 @@ second writer and can leave the intended recipient unaware.
 
 An app-server-owned Codex thread can accept an application-level `turn/start`
 request without terminal input. Until LLMsend has a tested live-thread registry
-and app-server sender, treat this as an explicit unsupported state and retain
-the durable note plus human status notice. Never fall back to `send-keys`.
+and app-server sender, retain the durable note plus human status notice and use
+the authorized terminal wake fallback only when its empty-prompt evidence is
+clear.
 
 ## Cross-machine guardrails
 

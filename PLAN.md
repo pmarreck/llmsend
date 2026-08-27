@@ -1,5 +1,15 @@
 # Plan
 
+- [x] Convert the historical terminal-input blocker into an advisory that
+      allows an explicitly authorized, inspect-first wake after durable note
+      delivery. Update the skill, docs, installed Codex wiring, and behavioral
+      tests. Curiosity poke: pane inspection and input cannot be atomic, so an
+      attached human can still type during the gap; keep that race visible.
+      Completed 2026-08-27 00:16 EDT. RED proved all five risky command forms
+      exited 2; GREEN proves they now warn and exit 0 while unrelated tmux
+      automation stays silent. `./test`, `nix flake check -L`, `./build`,
+      ShellCheck, and the skill validator pass. A live empty-prompt wake of the
+      `validate_gui` Grok also succeeded through the active Codex adapter.
 - [x] Define and test the `llmsend/v1` metadata contract, then make every new
       sender-produced note end in `.frontmatter.md`. Keep direct legacy `*.md`
       notes discoverable until inboxes drain naturally.

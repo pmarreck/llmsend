@@ -15,10 +15,10 @@ bounded inbox changes. `UserPromptSubmit` and `PostToolUse` hooks surface
 pending paths during existing turns; an optional tmux status-line message
 alerts the watching human.
 
-LLMsend never writes into another pane's terminal input. That structural rule
-eliminates draft corruption and makes delivery independent of terminal width,
-reflow, ANSI styling, and dim suggested prompts. If hooks are unavailable, the
-durable file remains authoritative and delivery degrades safely.
+LLMsend writes the durable inbox file first and prefers application-owned wake
+channels. An explicitly authorized sender may wake an idle agent through its
+terminal only after verifying a visibly empty prompt. The supplied advisory
+hook warns about the residual human-draft race without blocking the command.
 
 The implementation lives in `skills/llmsend/`:
 
@@ -29,7 +29,7 @@ The implementation lives in `skills/llmsend/`:
 - `scripts/notify-session` emits only a human-visible tmux status message.
 - `scripts/write-note` writes atomic, collision-safe `llmsend/v1` notes from
   stdin with relevance metadata for body-free triage.
-- `./test` enforces the no-prompt-injection boundary and hook behavior.
+- `./test` enforces durable delivery and advisory-hook behavior.
 
 ## Install
 
@@ -75,11 +75,10 @@ Wire `inbox-awareness-hook` into both `UserPromptSubmit` and `PostToolUse` for
 Claude and Codex. The copied Codex monitor is documentation/package parity;
 Codex does not yet expose a session monitor lifecycle. During migration, also
 wire `block-prompt-injection-hook`
-into the shell tool's `PreToolUse` hooks. It blocks only LLMsend-shaped tmux
-input injection; ordinary tmux automation, including answering a trust prompt,
-remains available. Restart existing sessions after changing skill or hook
-configuration. Claude sessions also need a restart or `/reload-plugins` after a
-monitor change.
+into the shell tool's `PreToolUse` hooks. It warns on LLMsend-shaped tmux input
+mutation but returns success; ordinary tmux automation stays silent. Restart
+existing sessions after changing skill or hook configuration. Claude sessions
+also need a restart or `/reload-plugins` after a monitor change.
 
 ## Validate
 

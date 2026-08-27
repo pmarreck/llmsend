@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Block only LLMsend-shaped tmux input injection. Other tmux automation, such
-# as answering an interactive trust prompt, remains available.
+# Warn about LLMsend-shaped tmux input injection without blocking it. Other
+# tmux automation remains silent.
 set -u
 
 input=""
@@ -25,9 +25,9 @@ esac
 
 if printf '%s\n' "$lower" | grep -Eq '(^|[[:space:];|&"'"'"'()])([^[:space:];|&"'"'"'()]*/)?tmux[[:space:]]+(send-keys|paste-buffer|load-buffer)([[:space:];|&"'"'"'()]|$)'; then
 	printf '%s\n' \
-		'BLOCKED: LLMsend may not inject terminal input.' \
-		'Write the durable inbox note; the awareness hook delivers it outside the editor buffer.' >&2
-	exit 2
+		'ADVISORY: LLMsend terminal input can overwrite a human draft.' \
+		'Write the durable inbox note first, then inspect the target pane immediately before waking it.' \
+		'Continue only at a demonstrably empty prompt; inspection and injection are not atomic.' >&2
 fi
 
 exit 0

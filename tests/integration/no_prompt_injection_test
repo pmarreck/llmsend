@@ -4,24 +4,33 @@ set -u
 root="$(cd "$(dirname "$0")/../.." && pwd)"
 source "$root/tests/testlib"
 
-targets=("$root/README.md" "$root/skills/llmsend/SKILL.md")
-if [ -d "$root/skills/llmsend/scripts" ]; then
-	while IFS= read -r path; do
-		[ "${path##*/}" = block-prompt-injection-hook ] || targets+=("$path")
-	done < <(find "$root/skills/llmsend/scripts" -maxdepth 1 -type f | sort)
-fi
+skill="$root/skills/llmsend/SKILL.md"
+readme="$root/README.md"
+guard="$root/skills/llmsend/scripts/block-prompt-injection-hook"
 
-for forbidden in 'tmux send-keys' 'tmux paste-buffer' 'tmux load-buffer' 'tmux capture-pane'; do
-	if rg -Fq -- "$forbidden" "${targets[@]}"; then
-		fail "prompt-injection primitive remains available: $forbidden"
-	fi
-done
-
-if ! rg -Fq 'inbox-awareness-hook' "$root/skills/llmsend/SKILL.md"; then
+if ! rg -Fq 'inbox-awareness-hook' "$skill"; then
 	fail "skill does not require application-owned hook delivery"
 fi
-if ! rg -Fq 'additionalContext' "$root/skills/llmsend/SKILL.md"; then
+if ! rg -Fq 'additionalContext' "$skill"; then
 	fail "skill does not identify the editor-independent context channel"
 fi
+if ! rg -Fq 'Write the durable note before' "$skill"; then
+	fail "skill does not make durable delivery authoritative"
+fi
+if ! rg -Fq 'explicitly authorized' "$skill"; then
+	fail "skill does not require authorization for terminal wakes"
+fi
+if ! rg -Fq 'not an atomic input-buffer' "$skill"; then
+	fail "skill hides the residual inspection/input race"
+fi
+if ! rg -Fq 'ADVISORY' "$guard"; then
+	fail "terminal-input hook does not identify itself as advisory"
+fi
+if rg -Fq 'exit 2' "$guard"; then
+	fail "terminal-input advisory still contains a blocking exit"
+fi
+if ! rg -Fq 'warns' "$readme"; then
+	fail "README does not describe advisory terminal-input behavior"
+fi
 
-finish_tests no-prompt-injection
+finish_tests terminal-input-advisory
