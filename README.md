@@ -27,7 +27,11 @@ The implementation lives in `skills/llmsend/`:
   notification channel.
 - `scripts/inbox-awareness-hook` supplies editor-independent agent context.
 - `scripts/notify-session AGENT_OR_PANE MESSAGE` verifies a live Herdr recipient
-  and emits a session-wide human notification naming it. It never writes input.
+  and emits a session-wide human notification naming it. This form never writes input.
+- `scripts/notify-session AGENT_OR_PANE --wake NOTE_PATH [--timeout 60]`
+  explicitly enables an advisory, ANSI-aware wake of an idle Codex, Grok or
+  Claude. It defers around human drafts, records attempts to prevent duplicate
+  sends, and reports JSON outcomes. Add `--dry-run` for read-only inspection.
 - `scripts/write-note` writes atomic, collision-safe `llmsend/v1` notes from
   stdin with relevance metadata for body-free triage.
 - `./test` enforces durable delivery and advisory-hook behavior.
@@ -48,7 +52,7 @@ claude plugin marketplace add "$HOME/Code/llmsend"
 claude plugin install --scope user llmsend@llmsend
 ```
 
-The plugin is required for idle wakeups. A plain `SKILL.md` symlink supplies
+The plugin is required for Claude's input-free monitor wakeups. A plain `SKILL.md` symlink supplies
 instructions and hooks only; Claude does not discover monitors from it.
 
 ### Manual
@@ -89,6 +93,12 @@ workflow. A notification is human-visible; it does not itself make an agent read
 The Nix notification package expects the session's installed `herdr` client on
 PATH (or `LLMSEND_HERDR` pointing at that executable). It deliberately does not
 bundle a competing Herdr server/client version. No tmux dependency is required.
+The opt-in wake implementation uses LuaJIT/cjson/LuaFileSystem from the flake.
+Its screen checks cannot atomically exclude human typing. It never clears a
+draft; unfamiliar layouts and uncertain submissions remain visible as deferred
+or unconfirmed outcomes. See the skill's authorized wake section for exit codes,
+attempt records and bounded Enter recovery. There is no new polling daemon:
+the caller runs the helper for a bounded period and retains deferred inbox work.
 On plain remote SSH, write the note and use the recipient's application monitor;
 do not invent Herdr context variables to target a possibly unrelated session.
 

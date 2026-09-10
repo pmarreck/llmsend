@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+set -u
+root="$(cd "$(dirname "$0")/../.." && pwd)"
+exec luajit "$root/tests/unit/herdr_wake_test.lua" "$root"

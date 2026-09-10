@@ -1,5 +1,26 @@
 # Plan
 
+- [x] Add opt-in `notify-session TARGET --wake NOTE_PATH` with guarded Herdr
+      input, bounded observation/Enter recovery, durable attempt deduplication,
+      and explicit outcomes. Preserve human drafts, prefer existing monitors,
+      and test changed geometry/identity and delayed submissions before coding.
+      Peter authorized this advisory terminal wake on 2026-09-10 EDT. A screen
+      check is not an atomic lock against simultaneous human typing.
+      Completed 2026-09-10 16:57 EDT: 127 deterministic assertions plus CLI,
+      persistent dedup and real kernel-lock integration tests pass. Nix Linux
+      package/check passes; all three platform outputs evaluate (Darwin/ARM
+      execution not tested). ANSI classifications checked against live Codex,
+      Grok and Claude captures. Codex `glob` and Grok `difz` acknowledged tests
+      in their existing sessions, with no Enter recovery needed. Live Codex
+      exposed a transient capture/status-transition false negative; added a
+      failing regression then fixed observation retries. Final Codex wake ID
+      a2d375b96a7d6c7f returned activity-observed and recipient ACKed. Grok ID
+      63d7c3ebe38b18a1 likewise ACKed. No agent/process restart or focus change.
+- [ ] If requested, wire the separate mail watcher to the explicit wake helper;
+      its current bridge still delivers durable notes and human toasts only.
+      Do not fabricate HERDR_ENV for that daemon; use an explicitly configured
+      owned-session adapter and retain the same draft/retry/identity checks.
+
 - [x] Migrate active messaging guidance and notification helper from tmux to
       Herdr (Peter, 2026-09-10). Preserve durable-first delivery, exact recipient
       resolution and the advisory human-draft race. Test the control-call surface,

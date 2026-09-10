@@ -9,6 +9,8 @@ for test_file in \
 	"$root/tests/unit/inbox_monitor_test" \
 	"$root/tests/unit/write_note_test" \
 	"$root/tests/unit/notify_session_test" \
+	"$root/tests/unit/herdr_wake_test" \
+	"$root/tests/integration/herdr_wake_cli_test" \
 	"$root/tests/unit/block_prompt_injection_hook_test" \
 	"$root/tests/integration/frontmatter_contract_test" \
 	"$root/tests/integration/no_prompt_injection_test" \

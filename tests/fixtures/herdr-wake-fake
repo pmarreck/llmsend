@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+set -u
+printf '%s\n' "$(printf '%s|' "$@")" >> "$WAKE_TEST_DIR/calls"
+case "$1 $2" in
+	'agent get')
+		status=idle
+		[ -f "$WAKE_TEST_DIR/submitted" ] && status=working
+		jq -n --arg cwd "$WAKE_TEST_DIR/project" --arg status "$status" \
+			'{result:{agent:{pane_id:"wT:p1",terminal_id:"term-test",agent:"codex",agent_session:{value:"thread-test"},cwd:$cwd,agent_status:$status}}}' ;;
+	'pane get') printf '%s\n' '{"result":{"pane":{"scroll":{"offset_from_bottom":0}}}}' ;;
+	'pane layout') printf '%s\n' '{"result":{"layout":{"panes":[{"pane_id":"wT:p1","rect":{"width":80,"height":24}}]}}}' ;;
+	'agent read')
+		printf '\033[48;2;57;55;73m› \033[2mAsk Codex to do anything\033[0m\n\033[48;2;57;55;73m \033[0m\nContext 60%% left\n' ;;
+	'agent prompt') touch "$WAKE_TEST_DIR/submitted"; exit 1 ;;
+	'notification show') exit 0 ;;
+	*) exit 99 ;;
+esac

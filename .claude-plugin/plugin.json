@@ -1,6 +1,6 @@
 {
   "name": "llmsend",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Durable inter-agent inbox messaging with application-owned wakes, Herdr notices and advisory inspect-first terminal wakes.",
   "author": {
     "name": "Peter Marreck"

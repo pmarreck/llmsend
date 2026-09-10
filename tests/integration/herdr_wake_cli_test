@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+set -u
+root="$(cd "$(dirname "$0")/../.." && pwd)"
+source "$root/tests/testlib"
+sandbox="$(mktemp -d "${TMPDIR:-/tmp}/llmsend-wake.XXXXXX")"
+trap 'rm -rf -- "$sandbox"' EXIT
+mkdir -p "$sandbox/project/inbox"
+printf 'durable fixture\n' > "$sandbox/project/inbox/note.frontmatter.md"
+export WAKE_TEST_DIR="$sandbox" HERDR_ENV=1 XDG_STATE_HOME="$sandbox/state"
+export LLMSEND_HERDR="$root/tests/fixtures/herdr-wake-fake"
+notify="$root/skills/llmsend/scripts/notify-session"
+"$notify" target --wake "$sandbox/project/inbox/note.frontmatter.md" --timeout 3 > "$sandbox/out" 2> "$sandbox/err"
+assert_eq 0 "$?" 'wake CLI observes processing even after Herdr error'
+assert_eq activity-observed "$(jq -r .status "$sandbox/out" 2>/dev/null)" 'wake result JSON'
+assert_contains "$(cat "$sandbox/calls" 2>/dev/null)" 'agent|prompt|wT:p1|[llmsend:' 'resolved pane and pointer'
+assert_contains "$(cat "$sandbox/calls" 2>/dev/null)" '--format|ansi|' 'ANSI capture'
+rm -f "$sandbox/submitted"
+before="$(rg -c 'agent\|prompt' "$sandbox/calls" 2>/dev/null)"
+"$notify" target --wake "$sandbox/project/inbox/note.frontmatter.md" --timeout 3 > "$sandbox/out" 2> "$sandbox/err"
+assert_eq 0 "$?" 'repeat attempt returns explicit result'
+assert_eq already-attempted "$(jq -r .status "$sandbox/out" 2>/dev/null)" 'durable deduplication'
+assert_eq "$before" "$(rg -c 'agent\|prompt' "$sandbox/calls" 2>/dev/null)" 'no second message'
+"$notify" target --wake "$sandbox/project/inbox/missing.md" > "$sandbox/out" 2> "$sandbox/err"
+assert_eq 2 "$?" 'nonexistent durable note rejected'
+printf note > "$sandbox/outside.md"
+"$notify" target --wake "$sandbox/outside.md" > "$sandbox/out" 2> "$sandbox/err"
+assert_eq 2 "$?" 'wrong inbox rejected'
+"$notify" target --wake "$sandbox/project/inbox/note.frontmatter.md" --dry-run > "$sandbox/out" 2> "$sandbox/err"
+assert_eq 0 "$?" 'dry run'
+assert_eq empty "$(jq -r .composer "$sandbox/out" 2>/dev/null)" 'dry run classifies without input'
+assert_eq "$before" "$(rg -c 'agent\|prompt' "$sandbox/calls" 2>/dev/null)" 'dry run adds no input'
+export WAKE_TEST_NOTIFY="$notify"
+luajit - "$sandbox" > "$sandbox/lock.out" 2> "$sandbox/lock.err" <<'LUA'
+local ffi=require('ffi')
+local lfs=require('lfs')
+local json=require('cjson.safe')
+ffi.cdef[[void *fopen(const char *, const char *); int fileno(void *); int flock(int,int); int fclose(void *);]]
+local dir=arg[1]..'/state/llmsend-wake'
+local lock_path
+for name in lfs.dir(dir) do if name:match('%.lock$') then lock_path=dir..'/'..name end end
+assert(lock_path,'missing lock file')
+local f=ffi.C.fopen(lock_path,'a'); assert(f~=nil)
+assert(ffi.C.flock(ffi.C.fileno(f),6)==0,'test must acquire kernel lock')
+local function q(s) return "'"..s:gsub("'","'\\''").."'" end
+local p=io.popen(q(os.getenv('WAKE_TEST_NOTIFY'))..' target --wake '..q(arg[1]..'/project/inbox/note.frontmatter.md'))
+local result=json.decode(p:read('*a')); p:close()
+ffi.C.fclose(f)
+assert(result and result.status=='deferred' and result.reason=='another wake owns this pane','second sender must defer')
+print('kernel lock excludes second sender')
+LUA
+assert_eq 0 "$?" 'actual OS lock prevents concurrent sender'
+assert_eq "$before" "$(rg -c 'agent\|prompt' "$sandbox/calls" 2>/dev/null)" 'locked sender adds no input'
+finish_tests herdr-wake-cli

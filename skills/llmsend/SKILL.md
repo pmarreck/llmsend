@@ -158,9 +158,9 @@ skills/llmsend/scripts/notify-session "$target" \
   "📬 Inbox note delivered: $recipient_dir/inbox/$notefile"
 ```
 
-`$target` is a unique live agent name or explicit pane ID. This helper verifies
+`$target` is a unique live agent name or explicit pane ID. This form verifies
 the live recipient then emits a session-wide human notification using Herdr's
-installed API. It never writes terminal input. Notification failure leaves the
+installed API. Without `--wake`, it never writes terminal input. Notification failure leaves the
 durable note intact; report that distinction. `LLMSEND_HERDR` can select the
 installed client for testing/configuration, but does not select a server session.
 
@@ -172,26 +172,49 @@ otherwise demonstrates that it consumed the file.
 Use this only when the owner has explicitly authorized terminal wakes in the
 current scope or a discoverable local policy records that authorization.
 
-1. Write the durable note first; optionally send the human notification.
-2. Capture enough of the target pane to identify the agent application and its
-   current prompt. Continue only when the prompt is visibly empty, with no
-   draft, dialog, selection, shell command, or other ambiguous state.
-3. Reinspect immediately before input if any intervening work occurred.
-4. Use Herdr's native agent API with only a short pointer. Never inject the note
-   body, credentials or shell fragments; do not reimplement Kitty/tmux key recipes:
+Use the tested helper rather than assembling screen reads and keystrokes:
 
-   ```bash
-   herdr agent read "$target" --source recent-unwrapped --lines 40
-   herdr agent prompt "$target" "Read the inbox note at $note_path."
-   ```
+```bash
+skills/llmsend/scripts/notify-session "$target" --wake "$note_path" --dry-run
+skills/llmsend/scripts/notify-session "$target" --wake "$note_path" --timeout 60
+```
 
-   `agent prompt` handles bracketed paste and submission and rejects recognized
-   blocked dialogs. It is still terminal input, not a human-draft lock. Inspect
-   errors with `agent get`/`agent read`; don't blindly retry a possibly delivered
-   prompt or press Enter after a stalled result. A monitor may already have
-   started work, so avoid duplicate wakes. Do not send while the agent is working
-   or its prompt/draft state is ambiguous.
-5. Treat the wake as unconfirmed until the recipient acknowledges the note.
+`--wake` explicitly opts into the advisory input race for this note. It requires
+a regular Markdown note directly in the resolved agent cwd's `inbox/`, a native
+conversation identity, and the intended Herdr session. Dry-run reads only; it
+does not notify, create wake state, or type. Runtime dependencies are LuaJIT with
+cjson and LuaFileSystem plus GNU coreutils, supplied by the Nix package/devShell.
+
+The helper preserves ANSI, identifies the full visible composer, distinguishes
+dim suggestions from solid text, and requires two stable empty observations.
+It defers for drafts, unknown layouts, scrollback and non-idle agents. It never
+clears/restores a human draft, changes focus, accepts dialogs, or starts another
+agent. Terminal resizing invalidates recovery evidence. Unknown future UI
+layouts defer instead of guessing.
+
+It sends a short path pointer with a notification ID once. Herdr's five-second
+stall error triggers observation, not a second message. A single Enter recovery
+is permitted following an explicit `agent_prompt_stalled` response, after five
+seconds and only if two observations still show the exact
+complete pointer without additions. Wrapped/collapsed pointers that cannot be
+matched exactly remain unconfirmed. Transport timeouts never authorize Enter:
+the server may still have its original operation queued. No blind Enter or resend. A per-pane OS
+lock serializes this helper's senders; a per-note-content/native-session attempt
+record is written before input. These do not lock human keystrokes.
+
+JSON stdout reports `activity-observed`, `deferred`, `unconfirmed`,
+`already-attempted`, `note-gone`, or `dry-run`. Exit 3 means deferred; 4 means
+unconfirmed; 1 is an operational error; 2 is invalid usage; 0 requires inspecting
+the status, not assuming acknowledgement. The default observation budget is
+60 seconds (configurable 0.25..300), plus bounded in-flight API calls.
+
+Records live under `${XDG_STATE_HOME:-$HOME/.local/state}/llmsend-wake/`.
+Repeated invocations cannot blindly resubmit an attempted note. After an
+unconfirmed result, inspect the agent and its record; do not delete the record
+to force a retry unless non-delivery is established. A note removed by another
+reader stops observation but is not proof this recipient acknowledged it.
+Only the recipient's acknowledgement demonstrates message consumption; observed
+activity can belong to a human prompt or a monitor event.
 
 The `scripts/block-prompt-injection-hook` compatibility name is historical. It
 now emits an `ADVISORY` for LLMsend-shaped input mutation and returns success.

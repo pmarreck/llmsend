@@ -1,21 +1,30 @@
 #!/usr/bin/env bash
-# Notify the watching human through Herdr without writing terminal input.
+# Herdr notices; terminal wakes are an explicit, advisory opt-in.
 set -u
+umask 077
 
 usage() {
 	printf '%s\n' \
 		'Usage: notify-session AGENT_OR_PANE MESSAGE' \
-		'Show a Herdr session-wide notification naming the recipient; never inject input.' \
+		'       notify-session AGENT_OR_PANE --wake NOTE_PATH [--timeout SECONDS] [--dry-run]' \
+		'Default: human notification only. --wake: guarded input for an existing inbox note.' \
+		'Wake outputs JSON. Exit 3: deferred; 4: submission unconfirmed; 0: inspect status.' \
+		'Timeout defaults to 60 seconds (0.25..300); never clears a human draft.' \
 		'Requires the intended Herdr session environment (HERDR_ENV=1).'
 }
 
 case "${1:-}" in
 	-h|--help) usage; exit 0 ;;
 	--about)
-		printf 'notify-session 0.4.0 — Herdr LLMsend notice — %s %s\n' "$(uname -s)" "$(uname -m)"
+		printf 'notify-session 0.5.0 — Herdr LLMsend notice/wake — %s %s\n' "$(uname -s)" "$(uname -m)"
 		exit 0
 		;;
 esac
+
+if [ "${2:-}" = --wake ]; then
+	script_dir="${LLMSEND_SCRIPT_DIR:-$(cd "$(dirname "$0")" && pwd)}"
+	exec luajit "$script_dir/herdr_wake_cli.lua" "$@"
+fi
 
 if [ "$#" -ne 2 ] || [ -z "$1" ] || [ -z "$2" ]; then
 	usage >&2
