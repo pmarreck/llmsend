@@ -16,10 +16,14 @@
       failing regression then fixed observation retries. Final Codex wake ID
       a2d375b96a7d6c7f returned activity-observed and recipient ACKed. Grok ID
       63d7c3ebe38b18a1 likewise ACKed. No agent/process restart or focus change.
-- [ ] If requested, wire the separate mail watcher to the explicit wake helper;
-      its current bridge still delivers durable notes and human toasts only.
-      Do not fabricate HERDR_ENV for that daemon; use an explicitly configured
-      owned-session adapter and retain the same draft/retry/identity checks.
+- [x] Wire the separate mail watcher to the explicit wake helper. Peter
+      authorized this on 2026-09-10. Thelio now runs unix_mail_redux 39702a7 with
+      helper e983780, using an owned private socket and pinned native identity
+      instead of fabricated HERDR_ENV. Both projects passed exact-commit CI.
+      At 17:50:39 EDT, delivered test mail automatically started the existing
+      Codex glob and Grok difz sessions; activity observed at 17:50:41.
+      Codex replied through email at 17:51:07. Full evidence is retained in
+      unix_mail_redux/PLAN.md and docs/HERDR_MAIL.md.
 
 - [x] Migrate active messaging guidance and notification helper from tmux to
       Herdr (Peter, 2026-09-10). Preserve durable-first delivery, exact recipient
