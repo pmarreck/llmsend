@@ -303,15 +303,17 @@ clear.
   snapshots and lock contention.
 - Treat the machine with the canonical working copy as the project's home box.
 - A missing session does not invalidate a successfully written inbox note.
-- A network failure means neither channel arrived; fix reachability and retry.
+- A network failure can occur after durable delivery; verify the remote inbox
+  before retrying so an uncertain acknowledgement does not duplicate the message.
 - The `From: SESSION@HOST` field is the cross-machine return address.
 
 ## Installation and validation
 
-Claude can use a symlinked skill directory. Codex currently needs a real skill
-directory with regular files, so hard-link or copy both `SKILL.md` and every
-bundled script, including `write-note`; installing only `SKILL.md` omits the
-executable safety mechanisms.
+Claude and Codex share the canonical skill tree through the repository's
+zero-copy installation. See README for standalone installation. Preserve the
+whole skill directory, including `write-note` and notification scripts; a copy
+of only `SKILL.md` omits executable helpers. Claude's plugin monitor still needs
+plugin installation, separately from shared skill discovery.
 
 Run:
 
