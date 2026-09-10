@@ -11,6 +11,7 @@ int nanosleep(const wake_timespec *, wake_timespec *);
 void *fopen(const char *, const char *);
 int fileno(void *); int flock(int, int); int fclose(void *);
 int chmod(const char *, unsigned int);
+unsigned int geteuid(void); int setenv(const char *,const char *,int);
 ]]
 local function emit(result,code) print(assert(json.encode(result))); os.exit(code) end
 local function fail(message,code) emit({status='error',reason=message},code or 1) end
@@ -47,15 +48,29 @@ end
 local target=arg[1]
 if arg[2]~='--wake' or not arg[3] then fail('Usage: notify-session TARGET --wake NOTE [--timeout SECONDS] [--dry-run]',2) end
 local note,timeout,dry=arg[3],60,false
+local service_socket,expected_session
 local i=4
 while i<=#arg do
 	if arg[i]=='--timeout' then timeout=tonumber(arg[i+1]); i=i+2
 	elseif arg[i]=='--dry-run' then dry=true; i=i+1
+	elseif arg[i]=='--service-socket' then service_socket=arg[i+1]; if not service_socket then fail('missing service socket',2) end; i=i+2
+	elseif arg[i]=='--expect-session' then expected_session=arg[i+1]; if not expected_session then fail('missing native session',2) end; i=i+2
 	else fail('unknown wake option: '..arg[i],2) end
 end
 if not timeout or timeout<0.25 or timeout>300 then fail('timeout must be between 0.25 and 300 seconds',2) end
 if not target or target:match('^%-') or target:find('[%z\1-\31\127]') or note:find('[%z\1-\31\127]') then fail('invalid target or path',2) end
-if os.getenv('HERDR_ENV')~='1' then fail('Run inside the intended Herdr session') end
+if service_socket then
+	-- Explicit operator opt-in for daemons, never a fabricated pane context.
+	if service_socket:sub(1,1)~='/' or service_socket:find('[%z\1-\31\127]') or not expected_session or expected_session=='' then
+		fail('service mode requires an absolute private socket and expected native session')
+	end
+	local socket=lfs.symlinkattributes(service_socket)
+	if not socket or socket.mode~='socket' or socket.uid~=tonumber(ffi.C.geteuid())
+		or socket.permissions:sub(5,5)=='w' or socket.permissions:sub(8,8)=='w' then
+		fail('service socket must be a real operator-owned Unix socket without group/other write access')
+	end
+	assert(ffi.C.setenv('HERDR_SOCKET_PATH',service_socket,1)==0)
+elseif os.getenv('HERDR_ENV')~='1' then fail('Run inside the intended Herdr session') end
 local a=lfs.symlinkattributes(note)
 if not a or a.mode~='file' or a.size>1024*1024 then fail('wake requires an existing regular inbox note (at most 1 MiB)',2) end
 local resolved,rc=command({'realpath','-e','--',note})
@@ -64,6 +79,7 @@ note=resolved:gsub('\n$','')
 local info=object('agent','get',target)
 local agent=info and info.result and info.result.agent
 if not agent or not agent.pane_id or not agent.agent_session or not agent.agent_session.value then fail('live native agent identity required') end
+if expected_session and agent.agent_session.value~=expected_session then emit({status='deferred',reason='native-session-changed'},3) end
 local pane=agent.pane_id
 local cwd,cwd_rc=command({'realpath','-e','--',agent.cwd})
 if cwd_rc~=0 then fail('cannot resolve agent cwd') end

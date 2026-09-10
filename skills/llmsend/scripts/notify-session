@@ -7,10 +7,11 @@ usage() {
 	printf '%s\n' \
 		'Usage: notify-session AGENT_OR_PANE MESSAGE' \
 		'       notify-session AGENT_OR_PANE --wake NOTE_PATH [--timeout SECONDS] [--dry-run]' \
+		'       Service opt-in: add --service-socket PATH --expect-session NATIVE_ID' \
 		'Default: human notification only. --wake: guarded input for an existing inbox note.' \
 		'Wake outputs JSON. Exit 3: deferred; 4: submission unconfirmed; 0: inspect status.' \
 		'Timeout defaults to 60 seconds (0.25..300); never clears a human draft.' \
-		'Requires the intended Herdr session environment (HERDR_ENV=1).'
+		'Requires HERDR_ENV=1, or explicit service mode with an operator-owned private socket.'
 }
 
 case "${1:-}" in

@@ -1,3 +1,5 @@
+[![Mechatron Prime CI](https://img.shields.io/endpoint?url=https%3A%2F%2Fthelio-nixos.tail66c90.ts.net%2Fbadges%2Fllmsend.json&style=for-the-badge)](https://thelio-nixos.tail66c90.ts.net/mechatron-prime/)
+
 # llmsend
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)

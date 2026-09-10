@@ -50,4 +50,32 @@ print('kernel lock excludes second sender')
 LUA
 assert_eq 0 "$?" 'actual OS lock prevents concurrent sender'
 assert_eq "$before" "$(rg -c 'agent\|prompt' "$sandbox/calls" 2>/dev/null)" 'locked sender adds no input'
+env -u HERDR_ENV "$notify" target --wake "$sandbox/project/inbox/note.frontmatter.md" --dry-run > "$sandbox/out" 2> "$sandbox/err"
+assert_eq 1 "$?" 'outside-session use requires explicit service authority'
+env -u HERDR_ENV "$notify" target --wake "$sandbox/project/inbox/note.frontmatter.md" --service-socket "$sandbox/outside.md" --expect-session thread-test --dry-run > "$sandbox/out" 2> "$sandbox/err"
+assert_eq 1 "$?" 'regular file cannot authorize a service connection'
+luajit - "$sandbox" > "$sandbox/service.out" 2> "$sandbox/service.err" <<'LUA'
+local ffi=require('ffi')
+local json=require('cjson.safe')
+ffi.cdef[[int socket(int,int,int); int bind(int,const void *,unsigned int); int close(int); int chmod(const char *,unsigned int);]]
+local path=arg[1]..'/herdr.sock'
+local address=ffi.new('unsigned char[110]')
+if ffi.os=='OSX' then address[0]=110; address[1]=1 else address[0]=1 end
+ffi.copy(address+2,path,#path)
+local fd=ffi.C.socket(1,1,0); assert(fd>=0)
+assert(ffi.C.bind(fd,address,#path+3)==0)
+assert(ffi.C.chmod(path,384)==0)
+local function q(s) return "'"..s:gsub("'","'\\''").."'" end
+local base='env -u HERDR_ENV '..q(os.getenv('WAKE_TEST_NOTIFY'))..' target --wake '..q(arg[1]..'/project/inbox/note.frontmatter.md')..' --service-socket '..q(path)..' --dry-run'
+local function run(extra)
+	local p=assert(io.popen(base..extra)); local value=json.decode(p:read('*a')); p:close(); return value
+end
+assert(run(' --expect-session thread-test').status=='dry-run','owned explicit socket must work outside Herdr')
+assert(run(' --expect-session another-thread').status=='deferred','changed session must not receive mail')
+assert(run('').status=='error','service wake requires a pinned native identity')
+ffi.C.chmod(path,438)
+assert(run(' --expect-session thread-test').status=='error','world-writable socket is not operator-private')
+ffi.C.close(fd)
+LUA
+assert_eq 0 "$?" 'service mode uses an owned private Unix socket and exact native session'
 finish_tests herdr-wake-cli

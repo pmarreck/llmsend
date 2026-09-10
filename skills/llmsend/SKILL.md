@@ -209,6 +209,12 @@ the status, not assuming acknowledgement. The default observation budget is
 60 seconds (configurable 0.25..300), plus bounded in-flight API calls.
 
 Records live under `${XDG_STATE_HOME:-$HOME/.local/state}/llmsend-wake/`.
+An operator-authorized daemon may supply `--service-socket /absolute/socket`
+and `--expect-session NATIVE_ID` instead of interactive Herdr context. This
+explicit mode requires a real Unix socket owned by its effective UID, without
+group/other write permission, and verifies the native conversation before input.
+It never sets `HERDR_ENV`; do not manufacture an interactive pane identity.
+The mail watcher must opt into this separately from durable inbox delivery.
 Repeated invocations cannot blindly resubmit an attempted note. After an
 unconfirmed result, inspect the agent and its record; do not delete the record
 to force a retry unless non-delivery is established. A note removed by another
