@@ -20,6 +20,9 @@ run_guard() {
 }
 
 warned=(
+	"herdr agent prompt validate 'Read /tmp/project/inbox/note.frontmatter.md'"
+	"herdr agent send-keys validate enter # llmsend"
+	"herdr pane run w1:p2 'echo llmsend'"
 	"tmux send-keys -t validate -l '📬 New inbox message from dirtree'"
 	"msg='New inbox message'; tmux paste-buffer -t validate"
 	"ssh host \"tmux load-buffer -b llmsend-ping-1 -\""
@@ -28,6 +31,9 @@ warned=(
 )
 
 allowed=(
+	"herdr agent get validate # llmsend"
+	"herdr notification show --body '📬 Inbox note delivered' Inbox"
+	"herdr agent read validate --lines 40 # llmsend"
 	"tmux send-keys -t validate y Enter"
 	"tmux display-message -t validate '📬 Inbox note delivered'"
 	"printf 'New inbox message'"

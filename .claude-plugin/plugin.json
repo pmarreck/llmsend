@@ -1,7 +1,7 @@
 {
   "name": "llmsend",
-  "version": "0.3.0",
-  "description": "Durable inter-agent inbox messaging with application-owned wake notifications that never modify terminal input.",
+  "version": "0.4.0",
+  "description": "Durable inter-agent inbox messaging with application-owned wakes, Herdr notices and advisory inspect-first terminal wakes.",
   "author": {
     "name": "Peter Marreck"
   },
@@ -9,8 +9,7 @@
   "license": "MIT",
   "keywords": [
     "claude-code",
-    "tmux",
-    "kitty",
+    "herdr",
     "inter-agent",
     "messaging",
     "inbox",

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Warn about LLMsend-shaped tmux input injection without blocking it. Other
-# tmux automation remains silent.
+# Warn about LLMsend-shaped terminal input without blocking it. Herdr is the
+# default; retain detection of legacy tmux wakes. Read-only controls stay silent.
 set -u
 
 input=""
@@ -23,7 +23,7 @@ case "$lower" in
 	*) exit 0 ;;
 esac
 
-if printf '%s\n' "$lower" | grep -Eq '(^|[[:space:];|&"'"'"'()])([^[:space:];|&"'"'"'()]*/)?tmux[[:space:]]+(send-keys|paste-buffer|load-buffer)([[:space:];|&"'"'"'()]|$)'; then
+if printf '%s\n' "$lower" | grep -Eq '(^|[[:space:];|&"'"'"'()])([^[:space:];|&"'"'"'()]*/)?(tmux[[:space:]]+(send-keys|paste-buffer|load-buffer)|herdr[[:space:]]+(agent[[:space:]]+(prompt|send-keys)|pane[[:space:]]+(run|send-keys|send-text)))([[:space:];|&"'"'"'()]|$)'; then
 	printf '%s\n' \
 		'ADVISORY: LLMsend terminal input can overwrite a human draft.' \
 		'Write the durable inbox note first, then inspect the target pane immediately before waking it.' \

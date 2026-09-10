@@ -1,5 +1,15 @@
 # Plan
 
+- [x] Migrate active messaging guidance and notification helper from tmux to
+      Herdr (Peter, 2026-09-10). Preserve durable-first delivery, exact recipient
+      resolution and the advisory human-draft race. Test the control-call surface,
+      missing session context, notification failures and terminal-input warnings.
+      Completed 2026-09-10 EDT. Red/green tests cover Herdr call ordering,
+      identity lookup, context refusal, failures and advisory wakes. Full suite,
+      skill validation and Nix package/check pass. Live Herdr showed an argument
+      ordering mismatch with help; title-first notification syntax is now tested
+      and worked live. No changes to running agent conversations or plugin caches.
+
 - [x] Convert the historical terminal-input blocker into an advisory that
       allows an explicitly authorized, inspect-first wake after durable note
       delivery. Update the skill, docs, installed Codex wiring, and behavioral

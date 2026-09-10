@@ -22,7 +22,9 @@
           };
           notifySession = pkgs.writeShellApplication {
             name = "llmsend-notify-session";
-            runtimeInputs = [ pkgs.tmux ];
+            # Herdr must be the caller's session-aware installed client. Do not
+            # pull a second server version into this notification wrapper.
+            runtimeInputs = [ pkgs.coreutils ];
             text = builtins.readFile ./skills/llmsend/scripts/notify-session;
           };
           blockPromptInjectionHook = pkgs.writeShellApplication {
@@ -72,7 +74,7 @@
 
       devShells = forAllSystems (pkgs: {
         default = pkgs.mkShell {
-          packages = [ pkgs.bash pkgs.coreutils pkgs.findutils pkgs.git pkgs.gnused pkgs.jq pkgs.ripgrep pkgs.tmux ];
+          packages = [ pkgs.bash pkgs.coreutils pkgs.findutils pkgs.git pkgs.gnused pkgs.jq pkgs.ripgrep ];
         };
       });
     };

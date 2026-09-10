@@ -1,32 +1,35 @@
 ---
 name: llmsend
 description: >-
-  Send durable messages between Claude Code or Codex sessions on one machine
+  Send durable messages between project agents in Herdr on one machine
   or across Tailscale. Use for cross-project handoffs, status updates, design
   questions, fix requests, acknowledgements, or waking an idle recipient.
   Every message is an inbox file; application-owned monitors or hooks notify
-  the agent, while an optional tmux status-line notice alerts the watching
+  the agent, while an optional Herdr notification alerts the watching
   human. An explicitly authorized empty-prompt wake is an advisory fallback.
 ---
 
 # LLMsend
 
-Coordinate project-named Claude Code and Codex sessions through a durable inbox
-and an editor-independent hook channel.
+Coordinate project agents through durable inboxes and Herdr. This workflow is
+agent-neutral; Claude and Codex have the application integrations described below,
+while other clients can use durable notes and authorized Herdr wakes. Herdr
+replaces tmux as the default agent multiplexer (Peter, 2026-09-10).
 
 ## Delivery invariant
 
 Write the durable note before attempting any notification or wake. The note is
 the authoritative message; every other channel is a hint that it exists.
 
-Use exactly two channels:
+Use durable delivery followed by notification:
 
 1. Write a schema-versioned `*.frontmatter.md` note under the recipient
    project's `inbox/`. This is the authoritative delivery.
 2. Use the agent application's own context channel. The Claude plugin's
    `scripts/inbox-monitor` wakes an idle interactive session; hooks expose
    changed pending paths during prompts and tool loops. Optionally call
-   `scripts/notify-session` to show the watching human a tmux status message.
+   `scripts/notify-session` to show the watching human a Herdr notification.
+   This is session-wide and names the recipient; it is not a targeted agent wake.
 
 Application-owned channels are preferred. If the hook is absent, delayed, or
 fails, an explicitly authorized sender may wake an idle agent through terminal
@@ -39,8 +42,13 @@ agent-directed message must have a durable note.
 
 ## Prerequisites
 
-- Keep one project per named tmux session; normally the session name equals the
-  project directory basename.
+- Keep one project per named Herdr workspace; normally its label and live agent
+  name equal the project directory basename. Match canonical cwd too. Workspace
+  labels, live agent names and native conversation IDs are different identities.
+- Before Herdr controls, verify `test "${HERDR_ENV:-}" = 1` and read
+  `herdr --skill` for the installed contract. Outside the intended Herdr session,
+  durable notes remain available; do not fabricate context variables or attach
+  to another client's focused session to deliver a notice.
 - Install the complete Claude plugin, including its always-on inbox monitor.
   A plain skill symlink loads instructions but cannot load the monitor.
 - Install the awareness hook for both `UserPromptSubmit` and `PostToolUse` in
@@ -56,27 +64,30 @@ agent-directed message must have a durable note.
 
 ### 1. Resolve the recipient
 
-Bare `SESSION` means local. `SESSION@HOST` means the named session on the
-Tailscale MagicDNS host.
+Bare `RECIPIENT` means local. `RECIPIENT@HOST` means a project/agent on the
+Tailscale MagicDNS host. Resolve the unique live agent or explicit pane handle;
+do not confuse the workspace label with an agent name.
 
-For a local session:
-
-```bash
-tmux has-session -t "$session"
-recipient_dir="$(tmux display-message -p -t "$session" '#{pane_current_path}')"
-```
-
-For a remote session, keep the complete remote command in one quoted string so
-the remote shell cannot reinterpret tmux's `#` format syntax:
+For local Herdr discovery:
 
 ```bash
-ssh -o BatchMode=yes "$host" "tmux has-session -t '$session'"
-recipient_dir="$(ssh -o BatchMode=yes "$host" \
-  "tmux display-message -p -t '$session' '#{pane_current_path}'")"
+herdr agent list
+herdr workspace list
+herdr agent get "$target"
 ```
 
-Resolve the project root from that directory when needed. Do not assume the
-pane happens to remain at its repository root.
+Read cwd, backend, pane and native `agent_session` identity from JSON, and confirm
+the intended project root. If several agents match, resolve the ambiguity before
+notification. If the workspace exists but its agent exited, use `erect-agent-stack`
+to restore it only when starting that recipient is within the requested scope.
+A known project inbox can receive a note even with no live agent.
+
+For a remote recipient, resolve its canonical project directory over
+`ssh -o BatchMode=yes`. A plain SSH process is not a Herdr-managed pane:
+do not set `HERDR_ENV=1` to bypass discovery. Write the remote note and let its
+installed application monitor/hook deliver it; otherwise report delivery as
+durable-only until a process in the intended remote Herdr session can notify it.
+Do not silently create a tmux session as a transport fallback.
 
 ### 2. Write the durable note
 
@@ -118,7 +129,7 @@ For a local note:
 ```bash
 note_path="$(skills/llmsend/scripts/write-note \
   --inbox "$recipient_dir/inbox" \
-  --sender "$sender" --recipient "$session" \
+  --sender "$sender" --recipient "$recipient" \
   --subject 'Subject' --description 'One-sentence summary.' \
   --type request --response-expected true --priority normal \
   --tag topic --tag alias <<'EOF'
@@ -132,7 +143,7 @@ notefile="${note_path##*/}"
 
 Omit `--datetime` during normal use so the writer records the sender's current
 zoned time. Pass it explicitly only when reproducing or testing a known event.
-Use `--reply-to` for replies. For cross-machine notes, use `SESSION@HOST` as the
+Use `--reply-to` for replies. For cross-machine notes, use `AGENT@HOST` as the
 sender, resolve the installed remote writer path, shell-escape its argument
 array with Bash `printf -v remote_command '%q ' ...`, and stream the body to
 `ssh -o BatchMode=yes "$host" "$remote_command"`. Running the writer on the
@@ -143,13 +154,15 @@ recipient host preserves its atomic collision check.
 For a local recipient:
 
 ```bash
-skills/llmsend/scripts/notify-session "$session" \
+skills/llmsend/scripts/notify-session "$target" \
   "📬 Inbox note delivered: $recipient_dir/inbox/$notefile"
 ```
 
-For a remote recipient, invoke the same script on that host when installed, or
-use tmux's status-message facility directly over `BatchMode=yes` SSH. This
-notice is for the human; the application hook is what informs the agent.
+`$target` is a unique live agent name or explicit pane ID. This helper verifies
+the live recipient then emits a session-wide human notification using Herdr's
+installed API. It never writes terminal input. Notification failure leaves the
+durable note intact; report that distinction. `LLMSEND_HERDR` can select the
+installed client for testing/configuration, but does not select a server session.
 
 Do not claim the recipient agent has read the note until it acknowledges or
 otherwise demonstrates that it consumed the file.
@@ -159,14 +172,25 @@ otherwise demonstrates that it consumed the file.
 Use this only when the owner has explicitly authorized terminal wakes in the
 current scope or a discoverable local policy records that authorization.
 
-1. Write the durable note and send the status-line notice first.
+1. Write the durable note first; optionally send the human notification.
 2. Capture enough of the target pane to identify the agent application and its
    current prompt. Continue only when the prompt is visibly empty, with no
    draft, dialog, selection, shell command, or other ambiguous state.
 3. Reinspect immediately before input if any intervening work occurred.
-4. Enter only a short pointer to the durable note, then submit it using the
-   recipient application's known input convention. Never inject the note body,
-   credentials, or shell fragments.
+4. Use Herdr's native agent API with only a short pointer. Never inject the note
+   body, credentials or shell fragments; do not reimplement Kitty/tmux key recipes:
+
+   ```bash
+   herdr agent read "$target" --source recent-unwrapped --lines 40
+   herdr agent prompt "$target" "Read the inbox note at $note_path."
+   ```
+
+   `agent prompt` handles bracketed paste and submission and rejects recognized
+   blocked dialogs. It is still terminal input, not a human-draft lock. Inspect
+   errors with `agent get`/`agent read`; don't blindly retry a possibly delivered
+   prompt or press Enter after a stalled result. A monitor may already have
+   started work, so avoid duplicate wakes. Do not send while the agent is working
+   or its prompt/draft state is ambiguous.
 5. Treat the wake as unconfirmed until the recipient acknowledges the note.
 
 The `scripts/block-prompt-injection-hook` compatibility name is historical. It
@@ -250,14 +274,14 @@ deduplication, proves identical output across distinct terminal sizes, and
 checks that risky terminal commands warn without being blocked.
 
 Wire `scripts/block-prompt-injection-hook` into the shell tool's `PreToolUse`
-hooks during migration. It emits an advisory for LLMsend-shaped tmux
-input-mutation commands while allowing them to proceed. Ordinary tmux
-automation remains silent.
+hooks during migration. It emits an advisory for LLMsend-shaped Herdr terminal
+input commands (and legacy tmux equivalents) while allowing them to proceed.
+Read-only inspection and side-band notifications remain silent.
 
 This is reasonable assurance against accidental draft corruption. An agent
 with arbitrary shell access could devise an unrecognized input-injection
 primitive, so stronger adversarial control would require denying terminal
-input mutation at the operating-system or tmux-policy boundary.
+input mutation at the operating-system or terminal-server boundary.
 
 ## Codex idle-session boundary
 

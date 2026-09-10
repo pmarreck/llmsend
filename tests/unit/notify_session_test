@@ -12,32 +12,49 @@ fi
 
 sandbox="$(mktemp -d "${TMPDIR:-/tmp}/llmsend-notify.XXXXXX")"
 trap 'rm -rf -- "$sandbox"' EXIT
-calls="$sandbox/tmux.calls"
-fake_tmux="$sandbox/tmux"
+calls="$sandbox/herdr.calls"
+fake_tmux="$sandbox/herdr"
 
 printf '#!%s\n' "$(command -v bash)" > "$fake_tmux"
 printf '%s\n' \
 	'set -u' \
 	'printf "%s\n" "$(printf "%s|" "$@")" >> "$LLMSEND_TEST_CALLS"' \
-	'[ "${1:-}" = has-session ] && [ "${3:-}" = missing ] && exit 1' \
-	'exit 0' >> "$fake_tmux"
+	'if [ "${1:-}" = agent ]; then [ "${3:-}" = missing ] && exit 1; printf "{}\\n"; exit 0; fi' \
+	'[ "${1:-}" = notification ] && exit "${LLMSEND_TEST_NOTIFY_STATUS:-0}"' \
+	'exit 99' >> "$fake_tmux"
 chmod +x "$fake_tmux"
 : > "$calls"
 
-LLMSEND_TMUX="$fake_tmux" LLMSEND_TEST_CALLS="$calls" \
+HERDR_ENV=1 LLMSEND_HERDR="$fake_tmux" LLMSEND_TEST_CALLS="$calls" \
 	"$notify" validate '📬 New inbox message: /tmp/note.md' >"$sandbox/out" 2>"$sandbox/err"
 assert_eq 0 "$?" "side-band notification"
-assert_contains "$(sed -n '1p' "$calls")" 'has-session|-t|validate|' "notification verifies the session"
-assert_contains "$(sed -n '2p' "$calls")" 'display-message|-t|validate|--|📬 New inbox message: /tmp/note.md|' "notification uses only the tmux status line"
+assert_eq 'agent|get|validate|' "$(sed -n '1p' "$calls")" "notification verifies the exact live agent"
+assert_eq 'notification|show|Inbox: validate|--body|📬 New inbox message: /tmp/note.md|--sound|none|' "$(sed -n '2p' "$calls")" "notification uses the live-verified title-first Herdr syntax"
+assert_eq '' "$(cat "$sandbox/out")" "server JSON does not leak onto notification stdout"
 
 before="$(wc -l < "$calls" | tr -d ' ')"
-LLMSEND_TMUX="$fake_tmux" LLMSEND_TEST_CALLS="$calls" \
+HERDR_ENV=1 LLMSEND_HERDR="$fake_tmux" LLMSEND_TEST_CALLS="$calls" \
 	"$notify" validate $'unsafe\nmessage' >/dev/null 2>"$sandbox/control.err"
 assert_eq 2 "$?" "control characters are rejected"
-assert_eq "$before" "$(wc -l < "$calls" | tr -d ' ')" "rejected text reaches no tmux command"
+assert_eq "$before" "$(wc -l < "$calls" | tr -d ' ')" "rejected text reaches no Herdr command"
 
-LLMSEND_TMUX="$fake_tmux" LLMSEND_TEST_CALLS="$calls" \
+HERDR_ENV=1 LLMSEND_HERDR="$fake_tmux" LLMSEND_TEST_CALLS="$calls" \
 	"$notify" missing 'message' >/dev/null 2>"$sandbox/missing.err"
 assert_eq 1 "$?" "missing session fails visibly"
+assert_eq "$((before + 1))" "$(wc -l < "$calls" | tr -d ' ')" "missing recipient emits no notification"
+
+before="$(wc -l < "$calls" | tr -d ' ')"
+HERDR_ENV= LLMSEND_HERDR="$fake_tmux" LLMSEND_TEST_CALLS="$calls" \
+	"$notify" validate message >/dev/null 2>"$sandbox/outside.err"
+assert_eq 1 "$?" "outside Herdr fails without selecting a foreign session"
+assert_eq "$before" "$(wc -l < "$calls" | tr -d ' ')" "outside Herdr never calls the control API"
+
+HERDR_ENV=1 LLMSEND_HERDR="$fake_tmux" LLMSEND_TEST_CALLS="$calls" \
+	LLMSEND_TEST_NOTIFY_STATUS=7 "$notify" wV:p1 '--literal message; no shell' >/dev/null 2>"$sandbox/failure.err"
+assert_eq 7 "$?" "notification errors remain visible to caller"
+
+HERDR_ENV=1 LLMSEND_HERDR="$fake_tmux" LLMSEND_TEST_CALLS="$calls" \
+	"$notify" --bad message >/dev/null 2>"$sandbox/option.err"
+assert_eq 2 "$?" "option-shaped recipient rejected"
 
 finish_tests notify-session

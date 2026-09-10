@@ -1,18 +1,18 @@
 #!/usr/bin/env bash
-# Notify the watching human through tmux's status line without writing bytes to
-# the agent pane's terminal input stream.
+# Notify the watching human through Herdr without writing terminal input.
 set -u
 
 usage() {
 	printf '%s\n' \
-		'Usage: notify-session SESSION MESSAGE' \
-		'Show a side-band tmux status message; never inject terminal input.'
+		'Usage: notify-session AGENT_OR_PANE MESSAGE' \
+		'Show a Herdr session-wide notification naming the recipient; never inject input.' \
+		'Requires the intended Herdr session environment (HERDR_ENV=1).'
 }
 
 case "${1:-}" in
 	-h|--help) usage; exit 0 ;;
 	--about)
-		printf 'notify-session 0.1.0 — editor-independent LLMsend notice — %s %s\n' "$(uname -s)" "$(uname -m)"
+		printf 'notify-session 0.4.0 — Herdr LLMsend notice — %s %s\n' "$(uname -s)" "$(uname -m)"
 		exit 0
 		;;
 esac
@@ -24,13 +24,22 @@ fi
 
 session="$1"
 message="$2"
-case "$session" in *[$'\r\n']*) printf 'invalid session name\n' >&2; exit 2 ;; esac
+case "$session" in -*|*[$'\r\n']*) printf 'invalid agent target\n' >&2; exit 2 ;; esac
 case "$message" in *[$'\r\n']*) printf 'invalid notification text\n' >&2; exit 2 ;; esac
 
-tmux_command="${LLMSEND_TMUX:-tmux}"
-if ! "$tmux_command" has-session -t "$session" 2>/dev/null; then
-	printf 'no tmux session named %s\n' "$session" >&2
+if [ "${HERDR_ENV:-}" != 1 ]; then
+	printf 'Run inside the intended Herdr session; durable inbox delivery remains available outside it.\n' >&2
 	exit 1
 fi
 
-"$tmux_command" display-message -t "$session" -- "$message"
+herdr_command="${LLMSEND_HERDR:-herdr}"
+if ! "$herdr_command" agent get "$session" >/dev/null; then
+	printf 'could not resolve live Herdr agent %s\n' "$session" >&2
+	exit 1
+fi
+
+# The installed Herdr notification API is session-wide, not pane-targeted.
+# Including the recipient in its title avoids suggesting a targeted wake.
+# This installed client requires TITLE first despite help displaying OPTIONS
+# first. The fixed prefix also prevents option-shaped recipient text here.
+"$herdr_command" notification show "Inbox: $session" --body "$message" --sound none >/dev/null

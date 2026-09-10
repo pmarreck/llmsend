@@ -1,6 +1,7 @@
 # Dirtree: Stateful directory trees in the CLI for humans and LLMs. https://github.com/pmarreck/dirtree
 ver=1.2
 annotate=[
+	INTENT.md = Durable messaging purpose and agent-neutral Herdr delivery boundaries
 	PLAN.md = Current llmsend protocol work and curiosity checks
 	PROJECT_OVERVIEW.md = Defines LLMsend's durable two-channel architecture and resize-independent safety invariant.
 	RULES.md = Non-negotiable delivery and data-safety invariants.
