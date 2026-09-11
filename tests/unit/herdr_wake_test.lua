@@ -24,6 +24,26 @@ local screens = {
 	claude = claude(e..'2mrun the tests\27[0m'),
 	grok = grok(''),
 }
+-- Observed on Einstein's Codex 0.153.4 pane, 2026-09-11: the
+-- composer has a bold marker and dim suggestion, but NO background SGR.
+local plain_footer='  '..e..'38;2;246;226;183mgpt-6-astra high'..e..'0m'..e..'2m · '..e..'0m'
+	..'Full Access · Context 23% left · weekly 71% left · 0.153.4\r\n'
+local function plain_codex(body, continuation)
+	return ' \r\n'..e..'0m'..e..'1m›'..e..'0m '..body..e..'0m\r\n'
+		..(continuation or '')..' \r\n'..plain_footer
+end
+eq('empty',wake.composer('codex',plain_codex(e..'2mAsk Codex to do anything')).kind,'Einstein unboxed composer')
+for _,width in ipairs({24,80,315}) do
+	local pad=string.rep(' ',width)
+	eq('empty',wake.composer('codex',plain_codex(pad)).kind,'unboxed empty '..width)
+	for _,text in ipairs({'x','Ask Codex to do anything','🙂','[Pasted text #1]'}) do
+		eq('draft',wake.composer('codex',plain_codex(text..pad)).kind,'unboxed draft '..width..' '..text)
+		eq('draft',wake.composer('codex',plain_codex('',text..'\r\n')).kind,'unboxed wrapped draft '..width..' '..text)
+	end
+end
+eq('unknown',wake.composer('codex','› \n \n'..plain_footer).kind,'unboxed unstyled transcript rejected')
+eq('unknown',wake.composer('codex',plain_codex('')..'more transcript\n').kind,'unboxed footer must end viewport')
+eq('unknown',wake.composer('codex',e..'1m› '..e..'0m\n \n').kind,'unboxed clipped footer rejected')
 for agent, screen in pairs(screens) do
 	eq('empty', wake.composer(agent, screen).kind, agent..' observed empty/suggestion')
 end
@@ -80,6 +100,9 @@ r,c=simulate({sample(),sample(),false,sample(nil,{status='working'})})
 eq('activity-observed',r.status,'transient snapshot during lifecycle change retries observation'); eq('prompt',c,'transient snapshot never resends')
 r,c=simulate({sample(codex('human draft'))})
 eq('deferred',r.status,'draft defers'); eq('',c,'draft untouched')
+eq('human-draft',r.reason,'draft deferral is diagnosable')
+r,c=simulate({sample('unrecognized layout')})
+eq('composer-unrecognized',r.reason,'unsupported layout is diagnosable')
 r,c=simulate({sample(),sample(codex('new human keystroke'))})
 eq('',c,'draft appearing on final recheck untouched')
 r,c=simulate({sample(),sample(nil,{identity='replacement'})})

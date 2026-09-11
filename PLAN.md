@@ -1,5 +1,15 @@
 # Plan
 
+- [x] Fix Einstein's unboxed Codex composer false negative (Peter's email
+      arrived 2026-09-10 20:19 EDT; repeated observation-deadline deferrals).
+      Preserve the observed ANSI layout as a regression, retain draft/wrapped
+      text protection, and report the concrete deferral reason in wake results.
+      Regression failed before the fix; all 160 pure assertions, repository
+      tests and Linux flake checks pass. Live read-only classification of
+      Einstein's 315x69 ANSI prompt is now empty, not unknown. Earlier boxed
+      prompt tests did not cover this layout. Deployment is tracked in the
+      mailer PLAN; this session's idle end-to-end wake is not yet proven.
+
 - [x] Add opt-in `notify-session TARGET --wake NOTE_PATH` with guarded Herdr
       input, bounded observation/Enter recovery, durable attempt deduplication,
       and explicit outcomes. Preserve human drafts, prefer existing monitors,
