@@ -84,7 +84,17 @@ local pane=agent.pane_id
 local cwd,cwd_rc=command({'realpath','-e','--',agent.cwd})
 if cwd_rc~=0 then fail('cannot resolve agent cwd') end
 cwd=cwd:gsub('\n$','')
-if note:match('^(.*)/[^/]+$')~=cwd..'/inbox' or not note:match('%.md$') then fail('note must be a direct Markdown file in the target project inbox',2) end
+local inbox_link=lfs.symlinkattributes(cwd..'/inbox')
+if not inbox_link or inbox_link.uid~=tonumber(ffi.C.geteuid()) then fail('inbox must be operator-owned',2) end
+local inbox,inbox_rc=command({'realpath','-e','--',cwd..'/inbox'})
+if inbox_rc~=0 then fail('cannot resolve agent inbox',2) end
+inbox=inbox:gsub('\n$','')
+local inbox_stat=lfs.attributes(inbox)
+if not inbox_stat or inbox_stat.mode~='directory' or inbox_stat.uid~=tonumber(ffi.C.geteuid())
+	or inbox_stat.permissions:sub(5,5)=='w' or inbox_stat.permissions:sub(8,8)=='w' then
+	fail('inbox target must be an operator-owned directory without group/other write access',2)
+end
+if note:match('^(.*)/[^/]+$')~=inbox or not note:match('%.md$') then fail('note must be a direct Markdown file in the target project inbox',2) end
 local function snapshot()
 	local first=object('agent','get',pane)
 	local p=object('pane','get',pane)

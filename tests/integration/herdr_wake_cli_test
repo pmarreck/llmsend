@@ -78,4 +78,16 @@ assert(run(' --expect-session thread-test').status=='error','world-writable sock
 ffi.C.close(fd)
 LUA
 assert_eq 0 "$?" 'service mode uses an owned private Unix socket and exact native session'
+# HOME/inbox may consolidate into Code/inbox; compare canonical directories.
+mv "$sandbox/project/inbox" "$sandbox/shared-inbox"
+ln -s ../shared-inbox "$sandbox/project/inbox"
+"$notify" target --wake "$sandbox/shared-inbox/note.frontmatter.md" --dry-run > "$sandbox/out" 2> "$sandbox/err"
+assert_eq 0 "$?" 'owned symlink inbox accepts its canonical note path'
+assert_eq empty "$(jq -r .composer "$sandbox/out" 2>/dev/null)" 'consolidated inbox still inspects composer'
+"$notify" target --wake "$sandbox/outside.md" --dry-run > "$sandbox/out" 2> "$sandbox/err"
+assert_eq 2 "$?" 'symlink inbox does not permit arbitrary outside notes'
+chmod 777 "$sandbox/shared-inbox"
+"$notify" target --wake "$sandbox/shared-inbox/note.frontmatter.md" --dry-run > "$sandbox/out" 2> "$sandbox/err"
+assert_eq 2 "$?" 'public-writable symlink target rejected'
+chmod 700 "$sandbox/shared-inbox"
 finish_tests herdr-wake-cli
