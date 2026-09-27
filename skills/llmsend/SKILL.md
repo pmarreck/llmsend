@@ -18,6 +18,14 @@ replaces tmux as the default agent multiplexer (Peter, 2026-09-10).
 
 ## Delivery invariant
 
+Resolve the intended reader before choosing the transport. This skill's inbox
+file protocol is for agent recipients. If the human owner has selected email,
+send human-directed decisions, questions and deliverables through the configured
+mail service instead; use the recipient address and sender identity in local
+guidance, not guessed names. Do not expect the owner to browse an agent inbox.
+Avoid forwarding routine inter-agent acknowledgements unless requested. Keep
+failed mail durable and report failure; a note or toast is not email delivery.
+
 Write the durable note before attempting any notification or wake. The note is
 the authoritative message; every other channel is a hint that it exists.
 
@@ -81,6 +89,9 @@ the intended project root. If several agents match, resolve the ambiguity before
 notification. If the workspace exists but its agent exited, use `erect-agent-stack`
 to restore it only when starting that recipient is within the requested scope.
 A known project inbox can receive a note even with no live agent.
+For an orchestrator without a project checkout, honor its explicitly configured
+inbox. Do not infer that `$HOME/inbox` belongs to the human, or override a known
+coordination address merely because the agent's terminal cwd changed.
 
 For a remote recipient, resolve its canonical project directory over
 `ssh -o BatchMode=yes`. A plain SSH process is not a Herdr-managed pane:

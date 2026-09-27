@@ -2,9 +2,11 @@
 ver=1.2
 annotate=[
 	INTENT.md = Durable messaging purpose and agent-neutral Herdr delivery boundaries
+	MECHATRON_PRIME_CI.md = Link to the shared Mechatron Prime CI guide
 	PLAN.md = Current llmsend protocol work and curiosity checks
 	PROJECT_OVERVIEW.md = Defines LLMsend's durable two-channel architecture and resize-independent safety invariant.
 	RULES.md = Non-negotiable delivery and data-safety invariants.
+	docs/PLAN_LOG.md = Completed plan items and historical validation evidence
 	flake.nix = Packages the cross-platform hook scripts and exposes the complete Nix check.
 	monitors/monitors.json = Claude plugin monitor declaration that wakes idle sessions when the project inbox changes.
 	skills/llmsend/SKILL.md = Durable inbox protocol, application monitors and authorized guarded Herdr wakes
