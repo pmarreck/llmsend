@@ -44,6 +44,23 @@ end
 eq('unknown',wake.composer('codex','› \n \n'..plain_footer).kind,'unboxed unstyled transcript rejected')
 eq('unknown',wake.composer('codex',plain_codex('')..'more transcript\n').kind,'unboxed footer must end viewport')
 eq('unknown',wake.composer('codex',e..'1m› '..e..'0m\n \n').kind,'unboxed clipped footer rejected')
+local observed_codex=assert(loadfile(root..'/tests/fixtures/codex_shortcut_composer.lua'))()
+eq('empty',wake.composer('codex',observed_codex).kind,'observed Codex shortcut footer')
+local shortcut='  '..e..'0m'..e..'1m← '..e..'0mfor agents · '..e..'0m'..e..'1m? '..e..'0mfor shortcuts'
+eq('empty',wake.composer('codex',plain_codex('')..shortcut).kind,'observed shortcut ANSI spacing variant')
+for _,draft in ipairs({'x','Ask Codex to do anything','🙂','[Pasted text #1]'}) do
+	eq('draft',wake.composer('codex',plain_codex(draft)..shortcut).kind,'shortcut retains solid draft '..draft)
+	eq('draft',wake.composer('codex',plain_codex('',draft..'\r\n')..shortcut).kind,'shortcut retains wrapped draft '..draft)
+end
+for _,tail in ipairs({
+	'← for agents', '? for shortcuts', '← for agents · ? for shortcuts human addition',
+	'human addition ← for agents · ? for shortcuts', '← for agents\n· ? for shortcuts',
+	'← for agents · ? for shortcuts\nmore transcript',
+	'← for agents · ? for shortcuts\n← for agents · ? for shortcuts',
+}) do
+	eq('unknown',wake.composer('codex',plain_codex('')..tail).kind,'unknown extra footer rejected '..tail)
+end
+eq('unknown',wake.composer('codex',e..'1m› '..e..'0m\n\n'..shortcut).kind,'shortcut requires Context footer')
 for agent, screen in pairs(screens) do
 	eq('empty', wake.composer(agent, screen).kind, agent..' observed empty/suggestion')
 end
@@ -96,6 +113,10 @@ local function simulate(samples, options)
 end
 local r,c=simulate({sample(),sample(),sample(nil,{status='working'})})
 eq('activity-observed',r.status,'idle wakes'); eq('prompt',c,'one prompt')
+r,c=simulate({sample(observed_codex),sample(observed_codex),sample(nil,{status='working'})})
+eq('activity-observed',r.status,'observed shortcut with independently idle lifecycle wakes'); eq('prompt',c,'shortcut sends one prompt')
+r,c=simulate({sample(observed_codex),sample(observed_codex,{geometry='40x40'}),sample(codex('human draft'),{geometry='40x40'})})
+eq('',c,'resize invalidates observed shortcut stability before new draft')
 r,c=simulate({sample(),sample(),false,sample(nil,{status='working'})})
 eq('activity-observed',r.status,'transient snapshot during lifecycle change retries observation'); eq('prompt',c,'transient snapshot never resends')
 r,c=simulate({sample(codex('human draft'))})
@@ -130,5 +151,7 @@ eq('prompt',c,'new typing just before retry prevents Enter')
 for _,status in ipairs({'working','blocked','unknown','crashed'}) do
 	r,c=simulate({sample(nil,{status=status})})
 	eq('',c,'no initial input while '..status)
+	r,c=simulate({sample(observed_codex,{status=status})})
+	eq('',c,'observed shortcut never overrides lifecycle '..status)
 end
 print('herdr-wake: '..count..' assertions passed')

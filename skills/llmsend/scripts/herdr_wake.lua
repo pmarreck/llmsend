@@ -69,7 +69,16 @@ function M.composer(agent, screen)
 				-- prompt marker plus a separated, bottom-anchored status footer;
 				-- include every intervening line so wrapped drafts stay visible.
 				if trim(rows[i-1].text)=='' and r.text:match('^%s+.*Context %d+%% left') then
-					for tail=i+1,#rows do if trim(rows[tail].text)~='' then return unknown end end
+					local shortcut_seen=false
+					for tail=i+1,#rows do
+						local text=trim(rows[tail].text)
+						if text~='' then
+							-- Observed Codex 0.160.1/0.162.1 footer. Any other
+							-- nonblank row, including a duplicate, is ambiguous.
+							if shortcut_seen or text~='← for agents · ? for shortcuts' then return unknown end
+							shortcut_seen=true
+						end
+					end
 					closed=true; break
 				end
 			elseif agent=='codex' and not r.background then
