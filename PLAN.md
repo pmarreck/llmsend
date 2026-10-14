@@ -4,7 +4,7 @@ Completed work and its validation evidence are preserved in [docs/PLAN_LOG.md](d
 
 ## Current
 
-- [ ] Validate and ship persistent hourly reminders with injected-clock retry, restart, identity and concurrency tests; preserve immediate notifications (context: skills/llmsend/references/reminders.md).
+- [x] Ship persistent hourly reminders with full suite, Nix package/checks and validators passing; preserve immediate notifications (done 2026-10-14 17:34 EDT; 71c3514; context: skills/llmsend/references/reminders.md).
 - [x] Verify the stale-draft fallback boundary: current Herdr captures cannot recover an exact editor buffer; mutation remains disabled, with 59/60/61-second regression coverage (done 2026-10-14 EDT; context: skills/llmsend/references/reminders.md).
 - [ ] Coordinate one declarative reminder runtime and verify a single recipient readback, runtime health and next-due status before marking deployment complete (context: skills/llmsend/references/reminders.md).
 - [x] Recognize the observed Codex shortcut footer without accepting unknown lifecycle states or weakening draft/resize protections; full suite and Nix package/test checks pass (done 2026-10-09 23:38 EDT; context: docs/plan_context/codex-shortcut-footer.md).
