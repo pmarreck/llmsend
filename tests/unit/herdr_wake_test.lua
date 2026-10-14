@@ -108,7 +108,7 @@ local function simulate(samples, options)
 		submit=function() calls[#calls+1]='prompt'; return (options or {}).transport or 'stalled' end,
 		enter=function() calls[#calls+1]='enter'; return true end,
 	}
-	local result=wake.run(port, {pointer=pointer, timeout=10, poll=1, retry_after=5})
+	local result=wake.run(port, {pointer=pointer, timeout=(options or {}).timeout or 10, poll=1, retry_after=5})
 	return result, table.concat(calls, ','), record
 end
 local r,c=simulate({sample(),sample(),sample(nil,{status='working'})})
@@ -153,5 +153,10 @@ for _,status in ipairs({'working','blocked','unknown','crashed'}) do
 	eq('',c,'no initial input while '..status)
 	r,c=simulate({sample(observed_codex,{status=status})})
 	eq('',c,'observed shortcut never overrides lifecycle '..status)
+end
+for _,seconds in ipairs({59,60,61}) do
+	r,c=simulate({sample(codex('multiline draft 日本語','continuation'))},{timeout=seconds})
+	eq('deferred',r.status,'screen-only draft remains unsupported after '..seconds..' seconds')
+	eq('',c,'no exact editor API means no stale-draft mutation')
 end
 print('herdr-wake: '..count..' assertions passed')

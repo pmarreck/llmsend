@@ -240,6 +240,16 @@ wake.
 
 ## Recipient awareness
 
+### Persistent hourly reminders
+
+For pending notes that remain unhandled, use the packaged `llmsend-inbox-remind`
+command and one persistent timer. Read [the reminder contract](references/reminders.md)
+before configuring, piloting or diagnosing it. Its native Codex adapter verifies
+an already-loaded thread's UUID, cwd and idle state, then submits through the
+existing daemon. It leaves terminal drafts untouched. Immediate changed-inbox
+hooks and monitors remain enabled. A native acceptance receipt is not proof
+that the recipient consumed the notes.
+
 ### Idle Claude sessions
 
 The Claude plugin declares `monitors/monitors.json`. Its session-scoped monitor
@@ -281,8 +291,9 @@ When notified, process each note to completion, in this order:
 1. Run `frontmatter --json -- PATH...` to triage new-format notes without
    loading their bodies. Read legacy notes directly.
 2. Read the selected note body.
-3. Act on it (or fold its content into durable project artifacts — spec,
-   PLAN.md, ISSUES.md — when the content must outlive the note).
+3. Act on it, or transfer unfinished authorized work into PLAN/context with
+   an owner, blocker and next action. Report genuine owner blockers to the
+   coordinator. Reading alone does not count as handling the note.
 4. Send any reply via the sender workflow, retaining the original note path
    in `Re:`.
 5. **Delete the note** — recoverably, e.g. `mv` to `~/.Trash`; never `rm`.
@@ -330,11 +341,17 @@ wake a standalone idle TUI. Do not start `codex exec resume` or a second app
 server against that conversation: Codex's exclusive writer lock rejects the
 second writer and can leave the intended recipient unaware.
 
-An app-server-owned Codex thread can accept an application-level `turn/start`
-request without terminal input. Until LLMsend has a tested live-thread registry
-and app-server sender, retain the durable note plus human status notice and use
-the authorized terminal wake fallback only when its empty-prompt evidence is
-clear.
+An already-loaded app-server-owned Codex thread can receive a reminder through
+the tested native sender described in [the reminder contract](references/reminders.md).
+The scheduled adapter requires an explicitly configured thread UUID, project
+directory and existing private control socket. It never resumes an unloaded
+thread or starts another writer. Unsupported backends defer; an explicitly
+authorized empty-prompt wake remains a separate fallback.
+
+The owner-approved 60-second stale-draft policy requires exact editor-buffer
+capture and guarded restoration without Enter. Herdr screen captures cannot
+provide that evidence, so draft displacement remains unsupported. Do not clear
+or reconstruct a draft from rendered text even after an hour of inactivity.
 
 ## Cross-machine guardrails
 

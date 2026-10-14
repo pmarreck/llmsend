@@ -1,0 +1,38 @@
+local root,base=arg[1],arg[2]
+package.path=root..'/skills/llmsend/scripts/?.lua;'..package.path
+local store=require('reminder_store')
+local ffi=require('ffi')
+local lfs=require('lfs')
+local state=store.open(base..'/state',false)
+local unlock=assert(state.lock('scope'))
+assert(not state.lock('scope'),'concurrent process cannot claim locked state')
+local contender=ffi.C.fork(); assert(contender>=0)
+if contender==0 then
+	local acquired=store.open(base..'/state',false).lock('scope')
+	ffi.C._exit(acquired and 1 or 0)
+end
+local contender_status=ffi.new('int[1]')
+assert(ffi.C.waitpid(contender,contender_status,0)==contender and contender_status[0]==0,'overlapping process cannot claim locked state')
+state.save('scope',{value='Unicode 🙂',operation='same-id'})
+assert(state.load('scope').value=='Unicode 🙂','atomic record readable')
+assert(lfs.attributes(base..'/state','permissions')=='rwx------','private directory')
+assert(lfs.attributes(base..'/state/scope.json','permissions')=='rw-------','private state')
+unlock()
+local released=assert(state.lock('scope')); released()
+local view=store.open(base..'/absent',true)
+assert(view.load('scope')==nil,'dry view missing state')
+assert(not lfs.attributes(base..'/absent'),'dry view creates nothing')
+local f=assert(io.open(base..'/state/broken.json','w')); f:write('not json'); f:close()
+assert(ffi.C.chmod(base..'/state/broken.json',384)==0)
+assert(not pcall(state.load,'broken'),'corrupt state fails closed')
+assert(lfs.mkdir(base..'/project'))
+assert(lfs.mkdir(base..'/project/inbox'))
+local names={'legacy.md','message.frontmatter.md','.hidden.md','ignore.txt'}
+for _,name in ipairs(names) do local file=assert(io.open(base..'/project/inbox/'..name,'w')); file:write('private'); file:close() end
+assert(lfs.mkdir(base..'/project/inbox/nested'))
+assert(lfs.link(base..'/project/inbox/legacy.md',base..'/project/inbox/linked.md',true))
+local pending=require('inbox_reminder').pending(store.scan(base..'/project'))
+assert(table.concat(pending,',')=='legacy.md,message.frontmatter.md','real classifier exact set')
+assert(lfs.link(base..'/state/scope.json',base..'/state/link.json',true))
+assert(not pcall(state.load,'link'),'state symlink rejected')
+print('reminder-store: PASS')

@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+set -u
+script_dir="${LLMSEND_SCRIPT_DIR:-$(cd "$(dirname "$0")" && pwd)}"
+exec luajit "$script_dir/inbox_remind_cli.lua" "$@"

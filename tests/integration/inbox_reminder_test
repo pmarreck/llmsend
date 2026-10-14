@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+set -u
+root="$(cd "$(dirname "$0")/../.." && pwd)"
+source "$root/tests/testlib"
+sandbox="$(mktemp -d "${TMPDIR:-/tmp}/llmsend-reminder.XXXXXXXX")"
+trap 'rm -rf -- "$sandbox"' EXIT
+mkdir "$sandbox/store" "$sandbox/rpc" "$sandbox/native"
+output=$(luajit "$root/tests/integration/reminder_store_test.lua" "$root" "$sandbox/store" 2>&1)
+status=$?
+assert_eq 0 "$status" "store integration: $output"
+output=$(luajit "$root/tests/integration/unix_rpc_test.lua" "$root" "$sandbox/rpc" 2>&1)
+status=$?
+assert_eq 0 "$status" "socket integration: $output"
+output=$(luajit "$root/tests/integration/native_socket_test.lua" "$root" "$sandbox/native" 2>&1)
+status=$?
+assert_eq 0 "$status" "native WebSocket integration: $output"
+cli="$root/skills/llmsend/scripts/inbox-remind"
+output=$("$cli" --help 2>&1); status=$?
+assert_eq 0 "$status" 'CLI help'
+assert_contains "$output" '--config' 'help describes config'
+mkdir -p "$sandbox/project with spaces/inbox"
+printf 'pending\n' > "$sandbox/project with spaces/inbox/one.md"
+jq -n --arg project "$sandbox/project with spaces" --arg state "$sandbox/private-state" --arg socket "$sandbox/missing.sock" \
+ '{version:1,state_dir:$state,projects:[{project:$project,thread:"00000000-0000-0000-0000-000000000001",socket:$socket}]}' > "$sandbox/config.json"
+chmod 600 "$sandbox/config.json"
+output=$("$cli" --config "$sandbox/config.json" --dry-run 2>"$sandbox/stderr"); status=$?
+assert_eq 3 "$status" 'offline native recipient explicitly deferred in dry run'
+assert_eq deferred "$(printf '%s' "$output" | jq -r '.projects[0].recipient_status')" 'dry run reports unavailable recipient'
+assert_eq '' "$(cat "$sandbox/stderr")" 'expected errors captured as JSON'
+[ ! -e "$sandbox/private-state" ] || fail 'dry run must create no state'
+output=$("$cli" --config "$sandbox/config.json" 2>"$sandbox/stderr"); status=$?
+assert_eq 0 "$status" 'first observation arms deadline without delivery'
+assert_eq waiting "$(printf '%s' "$output" | jq -r '.projects[0].status')" 'initial status waiting'
+output=$("$cli" --config "$sandbox/config.json" 2>"$sandbox/stderr"); status=$?
+assert_eq 0 "$status" 'restart retains deadline'
+assert_eq 1 "$(printf '%s' "$output" | jq -r '.projects[0].pending')" 'pending original note retained'
+chmod 644 "$sandbox/config.json"
+output=$("$cli" --config "$sandbox/config.json" 2>"$sandbox/stderr"); status=$?
+assert_eq 1 "$status" 'public config rejected'
+finish_tests inbox-reminder-integration

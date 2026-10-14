@@ -28,6 +28,9 @@ The implementation lives in `skills/llmsend/`:
 - `scripts/inbox-monitor` wakes idle Claude sessions through the application
   notification channel.
 - `scripts/inbox-awareness-hook` supplies editor-independent agent context.
+- `scripts/inbox-remind --config PRIVATE_JSON` sends hourly aggregate reminders
+  through a verified existing native Codex thread. A persistent timer invokes
+  this bounded command; pending notes remain authoritative.
 - `scripts/notify-session AGENT_OR_PANE MESSAGE` verifies a live Herdr recipient
   and emits a session-wide human notification naming it. This form never writes input.
 - `scripts/notify-session AGENT_OR_PANE --wake NOTE_PATH [--timeout 60]`
@@ -103,6 +106,14 @@ attempt records and bounded Enter recovery. There is no new polling daemon:
 the caller runs the helper for a bounded period and retains deferred inbox work.
 On plain remote SSH, write the note and use the recipient's application monitor;
 do not invent Herdr context variables to target a possibly unrelated session.
+
+## Persistent reminders
+
+For reminder configuration, private state, retry semantics, supported backends
+and deployment verification, read [Persistent inbox reminders](skills/llmsend/references/reminders.md).
+The native reminder path leaves prompt drafts untouched. Exact stale-draft
+capture is unavailable through the current Herdr API, so displacement remains
+disabled.
 
 ## Validate
 

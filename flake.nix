@@ -40,11 +40,18 @@
             runtimeInputs = [ pkgs.coreutils pkgs.gnused pkgs.jq ];
             text = builtins.readFile ./skills/llmsend/scripts/write-note;
           };
+          inboxRemind = pkgs.writeShellApplication {
+            name = "llmsend-inbox-remind";
+            runtimeInputs = [ pkgs.coreutils pkgs.websocat wakeLua ];
+            text = ''
+              export LLMSEND_SCRIPT_DIR=${./skills/llmsend/scripts}
+            '' + builtins.readFile ./skills/llmsend/scripts/inbox-remind;
+          };
         in {
-          inherit inboxAwarenessHook inboxMonitor notifySession blockPromptInjectionHook writeNote;
+          inherit inboxAwarenessHook inboxMonitor notifySession blockPromptInjectionHook writeNote inboxRemind;
           default = pkgs.symlinkJoin {
             name = "llmsend-tools";
-            paths = [ inboxAwarenessHook inboxMonitor notifySession blockPromptInjectionHook writeNote ];
+            paths = [ inboxAwarenessHook inboxMonitor notifySession blockPromptInjectionHook writeNote inboxRemind ];
           };
         };
     in {
@@ -58,7 +65,7 @@
             pname = "llmsend-tests";
             version = "0.1.0";
             src = ./.;
-            nativeBuildInputs = [ pkgs.bash pkgs.coreutils pkgs.findutils pkgs.git pkgs.gnused pkgs.jq pkgs.ripgrep (pkgs.luajit.withPackages (p: [ p.luafilesystem p.lua-cjson ])) ];
+            nativeBuildInputs = [ packages.inboxRemind pkgs.bash pkgs.coreutils pkgs.findutils pkgs.git pkgs.gnused pkgs.jq pkgs.ripgrep pkgs.websocat (pkgs.luajit.withPackages (p: [ p.luafilesystem p.lua-cjson ])) ];
             buildPhase = ''
               runHook preBuild
               cp -R "$src" work
@@ -66,6 +73,7 @@
               patchShebangs work
               cd work
               ./test
+              llmsend-inbox-remind --about > /dev/null
               runHook postBuild
             '';
             installPhase = ''
@@ -77,7 +85,7 @@
 
       devShells = forAllSystems (pkgs: {
         default = pkgs.mkShell {
-          packages = [ pkgs.bash pkgs.coreutils pkgs.findutils pkgs.git pkgs.gnused pkgs.jq pkgs.ripgrep (pkgs.luajit.withPackages (p: [ p.luafilesystem p.lua-cjson ])) ];
+          packages = [ pkgs.bash pkgs.coreutils pkgs.findutils pkgs.git pkgs.gnused pkgs.jq pkgs.ripgrep pkgs.websocat (pkgs.luajit.withPackages (p: [ p.luafilesystem p.lua-cjson ])) ];
         };
       });
     };
