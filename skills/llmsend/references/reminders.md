@@ -1,5 +1,10 @@
 # Persistent inbox reminders
 
+For immediate agent-to-agent delivery through exposed Codex tools, see
+[Native Codex delivery](native-codex.md). This document describes the separate
+scheduled socket adapter, not the interactive tool workflow. A tool-based live
+success does not establish timer deployment or every project's socket coverage.
+
 `llmsend-inbox-remind --config PRIVATE_JSON` performs one bounded scan of
 explicitly configured projects. A single persistent timer invokes it once a
 minute; each project/native session has a default reminder interval of 3600

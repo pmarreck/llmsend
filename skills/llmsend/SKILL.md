@@ -33,9 +33,11 @@ Use durable delivery followed by notification:
 
 1. Write a schema-versioned `*.frontmatter.md` note under the recipient
    project's `inbox/`. This is the authoritative delivery.
-2. Use the agent application's own context channel. The Claude plugin's
-   `scripts/inbox-monitor` wakes an idle interactive session; hooks expose
-   changed pending paths during prompts and tool loops. Optionally call
+2. Use the agent application's own context channel. For an idle Codex
+   recipient, prefer the verified native thread tools when the sender has
+   them; see [Native Codex delivery](references/native-codex.md). The Claude
+   plugin's `scripts/inbox-monitor` wakes an idle interactive session; hooks
+   expose changed pending paths during prompts and tool loops. Optionally call
    `scripts/notify-session` to show the watching human a Herdr notification.
    This is session-wide and names the recipient; it is not a targeted agent wake.
 
@@ -161,6 +163,28 @@ array with Bash `printf -v remote_command '%q ' ...`, and stream the body to
 recipient host preserves its atomic collision check.
 
 ### 3. Notify or wake
+
+Choose the recipient's application channel before terminal controls:
+
+- **Codex:** discover `codex_tui.read_thread` and
+  `codex_tui.send_message_to_thread` (often exposed as
+  `mcp__codex_tui__read_thread` / `mcp__codex_tui__send_message_to_thread`).
+  Follow [the native workflow](references/native-codex.md): write the note,
+  resolve the existing thread UUID and canonical cwd, verify native idle state,
+  then submit a short pointer to that note. Native state can establish idle
+  even when Herdr reports `unknown`; do not type into the terminal to work
+  around that mismatch. Tool availability depends on the sending application.
+- **Claude:** use the installed application-owned inbox monitor; its wake
+  mechanism is separate from Codex thread tools.
+- **No native route:** retain the durable note and use the configured reminder
+  adapter or explicitly authorized terminal fallback. Never invent a shell
+  command with the MCP tool's name, start another writer, or claim a toast woke
+  an agent. Missing tools are a deferred route, not permission to fabricate one.
+
+The native tool workflow is available immediately to agents reading this skill.
+It does not reconfigure a systemd timer or make every external inbox write wake
+Codex automatically. The scheduled socket adapter is documented separately in
+[Persistent inbox reminders](references/reminders.md).
 
 For a local recipient:
 
@@ -340,6 +364,11 @@ Codex hooks run only when a prompt or tool event already exists. They do not
 wake a standalone idle TUI. Do not start `codex exec resume` or a second app
 server against that conversation: Codex's exclusive writer lock rejects the
 second writer and can leave the intended recipient unaware.
+
+An authorized interactive sender with the native Codex tools can wake the
+existing recipient by following [Native Codex delivery](references/native-codex.md).
+This submits through the application and does not edit the recipient's terminal
+composer. Check native identity/state rather than requiring a readable footer.
 
 An already-loaded app-server-owned Codex thread can receive a reminder through
 the tested native sender described in [the reminder contract](references/reminders.md).

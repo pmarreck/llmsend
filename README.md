@@ -2,6 +2,13 @@
 
 # llmsend
 
+For Codex recipients, senders with the native `read_thread` and
+`send_message_to_thread` tools can submit a durable inbox-note pointer directly
+to the verified idle conversation, without terminal typing. Follow
+[Native Codex delivery](skills/llmsend/references/native-codex.md) for identity
+checks, tool arguments and acknowledgement requirements. This interactive route
+is separate from automatic inbox monitoring and the configured reminder timer.
+
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 An agent-neutral skill for durable messaging between projects in Herdr,

@@ -4,6 +4,7 @@ Completed work and its validation evidence are preserved in [docs/PLAN_LOG.md](d
 
 ## Current
 
+- [x] Document and verify immediate native Codex thread-tool delivery with explicit recipient acknowledgement; distinguish tool availability, scheduled adapters and terminal fallback; full suite and skill validation pass (done 2026-10-23 10:37 EDT; context: skills/llmsend/references/native-codex.md).
 - [x] Ship persistent hourly reminders with full suite, Nix package/checks and validators passing; preserve immediate notifications (done 2026-10-14 17:34 EDT; 71c3514; context: skills/llmsend/references/reminders.md).
 - [x] Verify the stale-draft fallback boundary: current Herdr captures cannot recover an exact editor buffer; mutation remains disabled, with 59/60/61-second regression coverage (done 2026-10-14 EDT; context: skills/llmsend/references/reminders.md).
 - [ ] Coordinate one declarative reminder runtime and verify a single recipient readback, runtime health and next-due status before marking deployment complete (context: skills/llmsend/references/reminders.md).
