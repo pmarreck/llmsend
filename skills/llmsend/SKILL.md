@@ -16,6 +16,11 @@ agent-neutral; Claude and Codex have the application integrations described belo
 while other clients can use durable notes and authorized Herdr wakes. Herdr
 replaces tmux as the default agent multiplexer (Peter, 2026-09-10).
 
+Owner policy (2026-10-27): Collie messaging, including walky-talky, is disabled
+for now. Do not recommend or use it as a delivery, notification or wake fallback.
+Use the durable inbox and native application/Herdr routes documented here;
+if those routes are unavailable, retain the note and report the limitation.
+
 ## Delivery invariant
 
 Resolve the intended reader before choosing the transport. This skill's inbox

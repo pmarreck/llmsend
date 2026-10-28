@@ -4,6 +4,7 @@ Completed work and its validation evidence are preserved in [docs/PLAN_LOG.md](d
 
 ## Current
 
+- [x] Exclude Collie/walky-talky from messaging guidance; remove installed global instruction blocks with backups and preserve inbox/native/Herdr routes; complete Nix test suite passes. (done 2026-10-27 21:03 EDT)
 - [x] Document and verify immediate native Codex thread-tool delivery with explicit recipient acknowledgement; distinguish tool availability, scheduled adapters and terminal fallback; full suite and skill validation pass (done 2026-10-23 10:37 EDT; context: skills/llmsend/references/native-codex.md).
 - [x] Ship persistent hourly reminders with full suite, Nix package/checks and validators passing; preserve immediate notifications (done 2026-10-14 17:34 EDT; 71c3514; context: skills/llmsend/references/reminders.md).
 - [x] Verify the stale-draft fallback boundary: current Herdr captures cannot recover an exact editor buffer; mutation remains disabled, with 59/60/61-second regression coverage (done 2026-10-14 EDT; context: skills/llmsend/references/reminders.md).
